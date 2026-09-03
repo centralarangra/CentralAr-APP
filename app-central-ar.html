@@ -554,6 +554,13 @@ const DRIVE_FILE_NAME = 'centralar-dados.json';
 function loadGis(){
   return new Promise(resolve=>{
     if(window.google && window.google.accounts && window.google.accounts.oauth2) return resolve(true);
+    if(!document.getElementById('gis-script')){
+      const s = document.createElement('script');
+      s.id = 'gis-script';
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      document.head.appendChild(s);
+    }
     let tries=0;
     const iv = setInterval(()=>{
       tries++;
