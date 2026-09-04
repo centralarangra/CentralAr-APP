@@ -86,8 +86,9 @@ a{color:inherit;}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;}
 @media(prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important;}}
 
-.update-banner{position:fixed;bottom:20px;right:20px;z-index:250;background:#0F2A52;color:#fff;display:flex;align-items:center;gap:12px;padding:14px 16px;font-size:13px;border-radius:12px;box-shadow:0 8px 28px -6px rgba(0,0,0,0.4);max-width:280px;}
-.update-banner button{background:#fff;color:#0F2A52;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12.5px;cursor:pointer;flex:none;white-space:nowrap;}
+.floating-notices{position:fixed;bottom:20px;right:20px;z-index:250;display:flex;flex-direction:column;gap:10px;align-items:flex-end;}
+.floating-card{background:#0F2A52;color:#fff;display:flex;align-items:center;gap:12px;padding:14px 16px;font-size:13px;border-radius:12px;box-shadow:0 8px 28px -6px rgba(0,0,0,0.4);max-width:280px;}
+.floating-card button{background:#fff;color:#0F2A52;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12.5px;cursor:pointer;flex:none;white-space:nowrap;}
 .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:100%;}
 .mobile-topbar{display:none;}
 .drawer-close-btn{display:none;}
@@ -335,9 +336,15 @@ tr:hover td{background:var(--paper);}
 </head>
 <body>
 
-<div class="update-banner" id="update-banner" style="display:none;">
-  <span>🔄 Nova versão do app disponível</span>
-  <button type="button" data-action="reload-app">Atualizar agora</button>
+<div class="floating-notices">
+  <div class="floating-card" id="reconnect-banner" style="display:none;">
+    <span>🔌 Sincronização desconectada</span>
+    <button type="button" data-action="quick-reconnect">Conectar agora</button>
+  </div>
+  <div class="floating-card" id="update-banner" style="display:none;">
+    <span>🔄 Nova versão do app disponível</span>
+    <button type="button" data-action="reload-app">Atualizar agora</button>
+  </div>
 </div>
 <div class="mobile-topbar">
   <button class="hamburger-btn" data-action="open-drawer" aria-label="Abrir menu">
@@ -401,7 +408,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.6.0';
+const APP_VERSION = 'v1.6.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -788,6 +795,10 @@ async function silentTokenRefresh(){
   }
 }
 
+function updateReconnectBanner(){
+  const el = document.getElementById('reconnect-banner');
+  if(el) el.style.display = (SYNC_CONFIG.clientId && !SYNC_CONFIG.connected) ? 'flex' : 'none';
+}
 async function initDb(){
   let real = null;
   try{ real = (typeof window.claude!=='undefined' && window.claude.use) ? await window.claude.use('db') : null; }catch(e){ real = null; }
@@ -808,6 +819,7 @@ async function initDb(){
       label.textContent = SYNC_CONFIG.clientId ? 'Toque em Configurações p/ reconectar' : 'Salvo neste aparelho';
     }
   }
+  updateReconnectBanner();
   subscribeAll();
   await ensureSeed();
 }
@@ -1966,6 +1978,7 @@ document.addEventListener('click', async (e)=>{
     } else {
       toast('Não foi possível conectar. Confira o Client ID.');
     }
+    updateReconnectBanner();
     render(); return;
   }
   if(action==='import-local-data'){
@@ -1983,13 +1996,31 @@ document.addEventListener('click', async (e)=>{
     return;
   }
   if(action==='gd-disconnect'){
-    SYNC_CONFIG.connected=false; SYNC_CONFIG.fileId=''; gdAccessToken=null;
+    SYNC_CONFIG.connected=false; SYNC_CONFIG.fileId=''; SYNC_CONFIG.clientId=''; SYNC_CONFIG.accessToken=''; SYNC_CONFIG.expiresAt=0; gdAccessToken=null;
     try{ localStorage.removeItem('centralar_gd_config'); }catch(e){}
     db = createLocalDb(); usingLocalFallback = true;
     subscribeAll();
     document.getElementById('sync-dot').classList.add('off');
     document.getElementById('sync-label').textContent = 'Salvo neste aparelho';
     toast('Desconectado do Google Drive.');
+    updateReconnectBanner();
+    render(); return;
+  }
+  if(action==='quick-reconnect'){
+    if(!SYNC_CONFIG.clientId){ toast('Configure o Client ID em Configurações primeiro.'); return; }
+    toast('Conectando ao Google Drive...');
+    const ok = await connectGoogleDrive(SYNC_CONFIG.clientId, true);
+    if(ok){
+      subscribeAll();
+      await ensureSeed();
+      await refreshEmpresa();
+      document.getElementById('sync-dot').classList.remove('off');
+      document.getElementById('sync-label').textContent = 'Sincronizado (Google Drive)';
+      toast('Conectado ao Google Drive!');
+    } else {
+      toast('Não foi possível conectar agora.');
+    }
+    updateReconnectBanner();
     render(); return;
   }
 
