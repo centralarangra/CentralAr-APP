@@ -72,6 +72,7 @@
   --shadow:0 1px 2px rgba(0,0,0,0.35), 0 8px 24px -12px rgba(0,0,0,0.55);
 }
 *{box-sizing:border-box;}
+html{overflow-x:hidden;}
 body{margin:0;background:var(--paper);color:var(--ink);min-height:100vh;}
 ::selection{background:var(--navy-100);}
 body,input,select,textarea,button{font-family:'Inter',system-ui,sans-serif;color:var(--ink);}
@@ -87,7 +88,7 @@ a{color:inherit;}
 
 .update-banner{position:fixed;bottom:20px;right:20px;z-index:250;background:#0F2A52;color:#fff;display:flex;align-items:center;gap:12px;padding:14px 16px;font-size:13px;border-radius:12px;box-shadow:0 8px 28px -6px rgba(0,0,0,0.4);max-width:280px;}
 .update-banner button{background:#fff;color:#0F2A52;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12.5px;cursor:pointer;flex:none;white-space:nowrap;}
-.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:100%;overflow-x:hidden;}
+.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:100%;}
 .mobile-topbar{display:none;}
 .drawer-close-btn{display:none;}
 .drawer-backdrop{display:none;}
@@ -224,7 +225,7 @@ tr:hover td{background:var(--paper);}
 
 /* ---------- Mobile (gaveta + sem rolagem horizontal) ---------- */
 @media(max-width:880px){
-  html,body{overflow-x:hidden;width:100%;}
+  html{overflow-x:hidden;width:100%;}
   .mobile-topbar{
     display:flex;align-items:center;gap:12px;
     position:fixed;top:0;left:0;right:0;height:56px;z-index:90;
@@ -400,7 +401,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.5.2';
+const APP_VERSION = 'v1.6.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -600,11 +601,13 @@ function subscribeAll(){
 }
 
 /* ---------- Google Drive sync (opcional, usado quando não é aberto como Artifact) ---------- */
-const SYNC_CONFIG = {clientId:'', fileId:'', connected:false};
+const SYNC_CONFIG = {clientId:'', fileId:'', connected:false, accessToken:'', expiresAt:0};
 try{
   const savedGd = JSON.parse(localStorage.getItem('centralar_gd_config')||'{}');
   SYNC_CONFIG.clientId = savedGd.clientId || '';
   SYNC_CONFIG.fileId = savedGd.fileId || '';
+  SYNC_CONFIG.accessToken = savedGd.accessToken || '';
+  SYNC_CONFIG.expiresAt = savedGd.expiresAt || 0;
 }catch(e){}
 let gdAccessToken = null;
 const DRIVE_FILE_NAME = 'centralar-dados.json';
@@ -635,7 +638,7 @@ function gdRequestToken(interactive){
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: SYNC_CONFIG.clientId,
         scope: 'https://www.googleapis.com/auth/drive.file',
-        callback: (resp)=>{ resp && resp.access_token ? resolve(resp.access_token) : resolve(null); },
+        callback: (resp)=>{ resp && resp.access_token ? resolve(resp) : resolve(null); },
         error_callback: ()=> resolve(null)
       });
       tokenClient.requestAccessToken(interactive? {} : {prompt:'none'});
@@ -652,7 +655,7 @@ function defaultDriveData(){
   const d = {}; COLLECTIONS.forEach(c=> d[c]=[]); d.meta = []; return d;
 }
 function persistGdConfig(){
-  try{ localStorage.setItem('centralar_gd_config', JSON.stringify({clientId:SYNC_CONFIG.clientId, fileId:SYNC_CONFIG.fileId||''})); }catch(e){}
+  try{ localStorage.setItem('centralar_gd_config', JSON.stringify({clientId:SYNC_CONFIG.clientId, fileId:SYNC_CONFIG.fileId||'', accessToken:SYNC_CONFIG.accessToken||'', expiresAt:SYNC_CONFIG.expiresAt||0})); }catch(e){}
 }
 async function gdFindOrCreateFile(){
   if(SYNC_CONFIG.fileId){
@@ -740,9 +743,11 @@ function createGoogleDriveDb(){
 }
 async function connectGoogleDrive(clientId, interactive){
   SYNC_CONFIG.clientId = clientId;
-  const token = await gdRequestToken(interactive);
-  if(!token) return false;
-  gdAccessToken = token;
+  const resp = await gdRequestToken(interactive);
+  if(!resp) return false;
+  gdAccessToken = resp.access_token;
+  SYNC_CONFIG.accessToken = resp.access_token;
+  SYNC_CONFIG.expiresAt = Date.now() + ((resp.expires_in||3300)*1000);
   try{
     await gdFindOrCreateFile();
     const gdb = createGoogleDriveDb();
@@ -757,6 +762,32 @@ async function connectGoogleDrive(clientId, interactive){
   }catch(e){ console.error(e); return false; }
 }
 
+async function tryResumeWithCachedToken(){
+  if(!SYNC_CONFIG.clientId || !SYNC_CONFIG.fileId || !SYNC_CONFIG.accessToken) return false;
+  if(!SYNC_CONFIG.expiresAt || Date.now() > SYNC_CONFIG.expiresAt - 60000) return false;
+  gdAccessToken = SYNC_CONFIG.accessToken;
+  try{
+    const gdb = createGoogleDriveDb();
+    const initial = await gdReadData();
+    gdb._load(initial);
+    gdb._pollStart();
+    db = gdb;
+    usingLocalFallback = false;
+    SYNC_CONFIG.connected = true;
+    return true;
+  }catch(e){ return false; }
+}
+async function silentTokenRefresh(){
+  if(!SYNC_CONFIG.connected || !SYNC_CONFIG.clientId) return;
+  const resp = await gdRequestToken(false);
+  if(resp && resp.access_token){
+    gdAccessToken = resp.access_token;
+    SYNC_CONFIG.accessToken = resp.access_token;
+    SYNC_CONFIG.expiresAt = Date.now() + ((resp.expires_in||3300)*1000);
+    persistGdConfig();
+  }
+}
+
 async function initDb(){
   let real = null;
   try{ real = (typeof window.claude!=='undefined' && window.claude.use) ? await window.claude.use('db') : null; }catch(e){ real = null; }
@@ -765,8 +796,8 @@ async function initDb(){
     db = real; usingLocalFallback = false; usingRealDb = true;
     label.textContent = 'Sincronizado';
   } else {
-    let connected = false;
-    if(SYNC_CONFIG.clientId && SYNC_CONFIG.fileId){
+    let connected = await tryResumeWithCachedToken();
+    if(!connected && SYNC_CONFIG.clientId && SYNC_CONFIG.fileId){
       connected = await connectGoogleDrive(SYNC_CONFIG.clientId, false);
     }
     if(connected){
@@ -2246,6 +2277,7 @@ initDb();
 initDownloads();
 checkForUpdate();
 setInterval(checkForUpdate, 5*60*1000);
+setInterval(silentTokenRefresh, 20*60*1000);
 </script>
 </body>
 </html>
