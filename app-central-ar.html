@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.7.0';
+const APP_VERSION = 'v1.7.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1771,7 +1771,7 @@ function docHead(title, subtitle){
 }
 function docFoot(){
   const pinIcon = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#0F2A52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.58 7-12a7 7 0 10-14 0c0 4.42 7 12 7 12z"/><circle cx="12" cy="9" r="2.4"/></svg>`;
-  const waIcon = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#0F2A52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 01-12.36 7.57L4 20l1.02-4.5A8.5 8.5 0 1121 11.5z"/><path d="M8.5 10.5c0 3 2 5 5 5"/></svg>`;
+  const waIcon = `<svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="12" fill="#0F2A52"/><path fill="#fff" d="M8.24 7.85c.36-.36.95-.36 1.31 0l1.28 1.28c.31.31.36.79.13 1.16l-.7 1.1c.66 1.14 1.6 2.08 2.74 2.74l1.1-.7c.37-.23.85-.18 1.16.13l1.28 1.28c.36.36.36.95 0 1.31l-.9.9c-.4.4-.98.55-1.51.38-2.99-.94-5.35-3.3-6.29-6.29-.17-.53-.02-1.11.38-1.51l.9-.9z"/></svg>`;
   return `<div class="doc-foot">
     <div class="doc-foot-left">
       <div class="doc-foot-row">${pinIcon}<div>${escapeHtml(EMPRESA.endereco)}</div></div>
