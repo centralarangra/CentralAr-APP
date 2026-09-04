@@ -85,8 +85,8 @@ a{color:inherit;}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;}
 @media(prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important;}}
 
-.update-banner{position:sticky;top:0;z-index:250;background:#0F2A52;color:#fff;display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 16px;font-size:13px;flex-wrap:wrap;text-align:center;}
-.update-banner button{background:#fff;color:#0F2A52;border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12.5px;cursor:pointer;}
+.update-banner{position:fixed;bottom:20px;right:20px;z-index:250;background:#0F2A52;color:#fff;display:flex;align-items:center;gap:12px;padding:14px 16px;font-size:13px;border-radius:12px;box-shadow:0 8px 28px -6px rgba(0,0,0,0.4);max-width:280px;}
+.update-banner button{background:#fff;color:#0F2A52;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12.5px;cursor:pointer;flex:none;white-space:nowrap;}
 .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:100%;overflow-x:hidden;}
 .mobile-topbar{display:none;}
 .drawer-close-btn{display:none;}
@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.5.1';
+const APP_VERSION = 'v1.5.2';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
