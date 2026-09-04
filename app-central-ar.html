@@ -85,6 +85,8 @@ a{color:inherit;}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;}
 @media(prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important;}}
 
+.update-banner{position:sticky;top:0;z-index:250;background:#0F2A52;color:#fff;display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 16px;font-size:13px;flex-wrap:wrap;text-align:center;}
+.update-banner button{background:#fff;color:#0F2A52;border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12.5px;cursor:pointer;}
 .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:100%;overflow-x:hidden;}
 .mobile-topbar{display:none;}
 .drawer-close-btn{display:none;}
@@ -330,6 +332,10 @@ tr:hover td{background:var(--paper);}
 </head>
 <body>
 
+<div class="update-banner" id="update-banner" style="display:none;">
+  <span>🔄 Nova versão do app disponível</span>
+  <button type="button" data-action="reload-app">Atualizar agora</button>
+</div>
 <div class="mobile-topbar">
   <button class="hamburger-btn" data-action="open-drawer" aria-label="Abrir menu">
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
@@ -392,6 +398,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
+const APP_VERSION = '2026-09-03.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1900,6 +1907,7 @@ document.addEventListener('click', async (e)=>{
   const action = btn.dataset.action;
 
   if(action==='set-tab'){ uiState.tab = btn.dataset.tab; budgetDraft=reportDraft=checklistDraft=photoDraft=saleDraft=null; editingDraft=false; closeDrawer(); render(); return; }
+  if(action==='reload-app'){ location.href = location.pathname + '?_=' + Date.now(); return; }
   if(action==='open-drawer'){ openDrawer(); return; }
   if(action==='close-drawer'){ closeDrawer(); return; }
   if(action==='close-print'){ const r=document.getElementById('print-root'); r.classList.remove('show'); r.innerHTML=''; return; }
@@ -2217,11 +2225,24 @@ function bindApptServicoSync(){
 /* ============================================================
    INÍCIO
 ============================================================ */
+async function checkForUpdate(){
+  try{
+    const res = await fetch('version.json?_=' + Date.now(), {cache:'no-store'});
+    if(!res.ok) return;
+    const data = await res.json();
+    if(data.version && data.version !== APP_VERSION){
+      document.getElementById('update-banner').style.display = 'flex';
+    }
+  }catch(e){ /* offline ou fora do GitHub Pages (Claude Artifact, arquivo local) — ignora */ }
+}
+
 renderBrand();
 render();
 initTheme();
 initDb();
 initDownloads();
+checkForUpdate();
+setInterval(checkForUpdate, 5*60*1000);
 </script>
 </body>
 </html>
