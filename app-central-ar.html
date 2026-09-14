@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.11.4';
+const APP_VERSION = 'v1.11.5';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1846,6 +1846,16 @@ function docFoot(){
   </div>
   <img class="doc-bottom-img" src="${DOC_BOTTOM_IMG}" alt="">`;
 }
+function docSheetHeightMM(){
+  const sheet = document.querySelector('#print-root .doc-sheet');
+  if(!sheet) return 297;
+  return +(sheet.scrollHeight / 3.7795275591).toFixed(2);
+}
+function applyPrintPageSize(){
+  let styleEl = document.getElementById('print-page-size');
+  if(!styleEl){ styleEl = document.createElement('style'); styleEl.id = 'print-page-size'; document.head.appendChild(styleEl); }
+  styleEl.textContent = `@media print{ @page{ size:210mm ${docSheetHeightMM()}mm; margin:0; } }`;
+}
 let currentPrintHtml = '', currentPrintTitle = '';
 function printNow(html, title){
   currentPrintHtml = html; currentPrintTitle = title||'Documento';
@@ -1867,8 +1877,9 @@ function buildStandaloneDoc(html, title){
   const styleEl = document.getElementById('app-styles');
   const styleContent = styleEl ? styleEl.innerHTML : '';
   const fontsLink = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">';
+  const pageSizeCSS = `@media print{ @page{ size:210mm ${docSheetHeightMM()}mm; margin:0; } }`;
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">`+
-    `<title>${escapeHtml(title||'Documento')}</title>${fontsLink}<style>${styleContent}\nhtml,body{overflow-x:auto !important;}\nbody{background:#fff;padding:20px 0;}</style></head>`+
+    `<title>${escapeHtml(title||'Documento')}</title>${fontsLink}<style>${styleContent}\nhtml,body{overflow-x:auto !important;}\nbody{background:#fff;padding:20px 0;}\n${pageSizeCSS}</style></head>`+
     `<body><div class="doc-sheet">${html}</div></body></html>`;
 }
 async function downloadCurrentDoc(){
@@ -2019,7 +2030,7 @@ document.addEventListener('click', async (e)=>{
   if(action==='open-drawer'){ openDrawer(); return; }
   if(action==='close-drawer'){ closeDrawer(); return; }
   if(action==='close-print'){ const r=document.getElementById('print-root'); r.classList.remove('show'); r.innerHTML=''; return; }
-  if(action==='trigger-print'){ try{ window.print(); }catch(e){ toast('Use o botão "Baixar arquivo" abaixo.'); } return; }
+  if(action==='trigger-print'){ try{ applyPrintPageSize(); window.print(); }catch(e){ toast('Use o botão "Baixar arquivo" abaixo.'); } return; }
   if(action==='download-print'){ await downloadCurrentDoc(); return; }
   if(action==='set-sub'){ uiState[btn.dataset.group] = btn.dataset.v; render(); return; }
   if(action==='close-modal'){ closeModal(); return; }
