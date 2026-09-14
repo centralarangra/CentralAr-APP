@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.7.2';
+const APP_VERSION = 'v1.7.3';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -415,6 +415,15 @@ const pad2 = n => String(n).padStart(2,'0');
 const todayStr = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 const monthStr = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
 const fmt = v => (v<0?'-':'') + 'R$ ' + Math.abs(v||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+function parseMoney(str){
+  if(typeof str==='number') return str;
+  if(!str) return 0;
+  let s = String(str).trim().replace(/[^\d,.-]/g,'');
+  if(s.includes(',') && s.includes('.')) s = s.replace(/\./g,'').replace(',', '.');
+  else if(s.includes(',')) s = s.replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
 const formatDateBR = s => { if(!s) return '—'; const [y,m,d]=s.split('-'); return d+'/'+m+'/'+y; };
 function escapeHtml(s){ return (s===undefined||s===null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function clientName(id){ const c = STATE.clients.find(x=>x.id===id); return c? c.nome : ''; }
@@ -947,7 +956,8 @@ function entityModalHtml(key, record){
       const val = record[f.key]!==undefined? record[f.key]: '';
       if(f.type==='textarea') return `<div class="field span2"><label>${f.label}</label><textarea name="${f.key}">${escapeHtml(val)}</textarea></div>`;
       if(f.type==='select') return `<div class="field ${f.col===2?'span2':''}"><label>${f.label}</label><select name="${f.key}">${f.options.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join('')}</select></div>`;
-      return `<div class="field ${f.col===2?'span2':''}"><label>${f.label}</label><input name="${f.key}" type="${f.type}" ${f.type==='number'?'step="0.01"':''} ${f.required?'required':''} value="${escapeHtml(val)}" ${f.placeholder?`placeholder="${f.placeholder}"`:''}></div>`;
+      const inputType = f.type==='number'? 'text' : f.type;
+      return `<div class="field ${f.col===2?'span2':''}"><label>${f.label}</label><input name="${f.key}" type="${inputType}" ${f.type==='number'?'inputmode="decimal"':''} ${f.required?'required':''} value="${escapeHtml(val)}" ${f.placeholder?`placeholder="${f.placeholder}"`:''}></div>`;
     }).join('')}
     </div>
     <div class="modal-actions">
@@ -961,7 +971,7 @@ async function handleEntityForm(form){
   const key = form.dataset.entity, id = form.dataset.id, cfg = ENTITY_CONFIG[key];
   const fd = new FormData(form);
   const data = {};
-  cfg.fields.forEach(f=> data[f.key] = f.type==='number'? parseFloat(fd.get(f.key)||0) : (fd.get(f.key)||''));
+  cfg.fields.forEach(f=> data[f.key] = f.type==='number'? parseMoney(fd.get(f.key)) : (fd.get(f.key)||''));
   if(id) await db.collection(key).doc(id).update(data);
   else await db.collection(key).add(data);
   closeModal();
@@ -1115,7 +1125,7 @@ function txModalHtml(tx){
     <input type="hidden" name="tipo" value="${tx.tipo}">
     <div class="field"><label>Descrição</label><input name="descricao" value="${escapeHtml(tx.descricao)}" placeholder="Ex: Recebimento serviço Cliente Márcio" required></div>
     <div class="field-grid">
-      <div class="field"><label>Valor (R$)</label><input name="valor" type="number" step="0.01" min="0" required value="${tx.valor}"></div>
+      <div class="field"><label>Valor (R$)</label><input name="valor" type="text" inputmode="decimal" required value="${tx.valor}"></div>
       <div class="field"><label>Vencimento / Data</label><div class="date-input-wrap"><input id="date-tx" name="data" type="date" required value="${tx.data}">${dateIconBtn('date-tx')}</div></div>
       <div class="field"><label>Categoria</label><select name="categoria">${STATE.categories.filter(c=>c.tipo==='Ambos'||c.tipo===(tx.tipo==='entrada'?'Entrada':'Saída')).map(c=>`<option ${c.nome===tx.categoria?'selected':''}>${escapeHtml(c.nome)}</option>`).join('') || '<option value="">Cadastre uma categoria</option>'}</select></div>
       <div class="field"><label>Forma de pagamento</label><select name="formaPagamento">${['Pix','Dinheiro','Cartão','Boleto','Transferência'].map(o=>`<option ${o===tx.formaPagamento?'selected':''}>${o}</option>`).join('')}</select></div>
@@ -1131,7 +1141,7 @@ function txModalHtml(tx){
 async function handleTxForm(form){
   const id = form.dataset.id;
   const fd = new FormData(form);
-  const data = {tipo:fd.get('tipo'), descricao:fd.get('descricao'), valor:parseFloat(fd.get('valor')||0), data:fd.get('data'), categoria:fd.get('categoria'), formaPagamento:fd.get('formaPagamento'), status:fd.get('status')||'Pago'};
+  const data = {tipo:fd.get('tipo'), descricao:fd.get('descricao'), valor:parseMoney(fd.get('valor')), data:fd.get('data'), categoria:fd.get('categoria'), formaPagamento:fd.get('formaPagamento'), status:fd.get('status')||'Pago'};
   if(id) await db.collection('transactions').doc(id).update(data);
   else await db.collection('transactions').add(data);
   closeModal();
@@ -1244,7 +1254,7 @@ function renderSaleEditor(){
         <button type="button" data-action="sale-desconto-toggle" data-v="true" class="${d.temDesconto?'active':''}">Sim</button>
       </div>
     </div>
-    ${d.temDesconto? `<div class="field"><label>Valor do desconto (R$)</label><input type="number" min="0" step="0.01" max="${subtotal}" value="${d.desconto||0}" data-action="sale-desconto-valor"></div>` : ''}
+    ${d.temDesconto? `<div class="field"><label>Valor do desconto (R$)</label><input type="text" inputmode="decimal" value="${d.desconto||0}" data-action="sale-desconto-valor"></div>` : ''}
     <div class="doc-total"><span>Total</span><span class="num">${fmt(total)}</span></div>
     <div class="field" style="margin-top:14px;"><label>Observações</label><textarea data-live-input="sale-obs">${escapeHtml(d.obs)}</textarea></div>
     <div class="modal-actions">
@@ -1386,7 +1396,7 @@ function renderBudgetEditor(){
     <div class="item-row">
       <div>${escapeHtml(it.descricao)}</div>
       <input type="number" min="1" value="${it.qtd}" data-action="budget-item-qtd" data-idx="${idx}">
-      <input type="number" step="0.01" value="${it.valor}" data-action="budget-item-valor" data-idx="${idx}" ${d.modo==='fechado'?'readonly style="background:var(--paper);"':''}>
+      <input type="text" inputmode="decimal" value="${it.valor}" data-action="budget-item-valor" data-idx="${idx}" ${d.modo==='fechado'?'readonly style="background:var(--paper);"':''}>
       <button class="icon-btn" data-action="budget-item-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('') || `<div class="empty-state" style="padding:20px 0;">Adicione itens ao orçamento.</div>`;
   return `
@@ -1410,7 +1420,7 @@ function renderBudgetEditor(){
     </div>` : `
     <div class="field-grid">
       <div class="field span2"><label>Descrição do item</label><input id="item-desc-aberto" placeholder="Ex: Limpeza completa + ajuste elétrico"></div>
-      <div class="field"><label>Valor (R$)</label><input id="item-valor-aberto" type="number" step="0.01"></div>
+      <div class="field"><label>Valor (R$)</label><input id="item-valor-aberto" type="text" inputmode="decimal"></div>
       <button class="btn" style="margin-top:22px;" data-action="budget-add-aberto">+ Adicionar item</button>
     </div>`}
     <div style="margin-top:10px;">${rows}</div>
@@ -1514,7 +1524,7 @@ function renderReportEditor(){
     <div class="section-title">Itens extras <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do orçamento, preço aberto</span></div>
     <div class="field-grid">
       <div class="field span2"><label>Descrição</label><input id="extra-desc"></div>
-      <div class="field"><label>Valor (R$)</label><input id="extra-valor" type="number" step="0.01"></div>
+      <div class="field"><label>Valor (R$)</label><input id="extra-valor" type="text" inputmode="decimal"></div>
       <button class="btn" style="margin-top:22px;" data-action="report-add-extra">+ Adicionar</button>
     </div>
     <div style="margin-top:6px;">${extraRows}</div>
@@ -2073,8 +2083,9 @@ document.addEventListener('click', async (e)=>{
   if(action==='budget-add-catalogo'){ return; }
   if(action==='budget-add-aberto'){
     const desc = document.getElementById('item-desc-aberto').value.trim();
-    const val = parseFloat(document.getElementById('item-valor-aberto').value||0);
-    if(!desc || !val) return;
+    const val = parseMoney(document.getElementById('item-valor-aberto').value);
+    if(!desc){ toast('Preencha a descrição do item.'); return; }
+    if(!val){ toast('Preencha um valor válido pro item.'); return; }
     budgetDraft.itens.push({descricao:desc, valor:val, qtd:1}); render(); return;
   }
   if(action==='budget-item-rm'){ budgetDraft.itens.splice(+btn.dataset.idx,1); render(); return; }
@@ -2100,8 +2111,9 @@ document.addEventListener('click', async (e)=>{
   if(action==='report-prev-toggle'){ reportDraft.itensPrevistos[+btn.dataset.idx].checked = btn.dataset.v==='true'; render(); return; }
   if(action==='report-add-extra'){
     const desc = document.getElementById('extra-desc').value.trim();
-    const val = parseFloat(document.getElementById('extra-valor').value||0);
-    if(!desc||!val) return;
+    const val = parseMoney(document.getElementById('extra-valor').value);
+    if(!desc){ toast('Preencha a descrição do item.'); return; }
+    if(!val){ toast('Preencha um valor válido pro item.'); return; }
     reportDraft.itensExtras.push({descricao:desc, valor:val}); render(); return;
   }
   if(action==='report-extra-rm'){ reportDraft.itensExtras.splice(+btn.dataset.idx,1); render(); return; }
@@ -2165,9 +2177,9 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='appt-status'){ await db.collection('appointments').doc(el.dataset.id).update({status:el.value}); return; }
   if(el.dataset.action==='budget-status'){ await db.collection('budgets').doc(el.dataset.id).update({status:el.value}); return; }
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
-  if(el.dataset.action==='budget-item-valor'){ budgetDraft.itens[+el.dataset.idx].valor = parseFloat(el.value||0); render(); return; }
+  if(el.dataset.action==='budget-item-valor'){ budgetDraft.itens[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='sale-item-qtd'){ saleDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
-  if(el.dataset.action==='sale-desconto-valor'){ saleDraft.desconto = parseFloat(el.value||0); render(); return; }
+  if(el.dataset.action==='sale-desconto-valor'){ saleDraft.desconto = parseMoney(el.value); render(); return; }
 
   if(el.dataset.action==='budget-add-catalogo' && el.value){
     const s = STATE.services.find(x=>x.id===el.value);
