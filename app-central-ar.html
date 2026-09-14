@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.11.0';
+const APP_VERSION = 'v1.11.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1156,7 +1156,7 @@ function saleDraftFromReport(reportId){
   if(!r) return newSaleDraft();
   const itens = [
     ...r.itensPrevistos.filter(i=>i.checked).map(i=>({tipo:'servico', refId:'', nome:i.descricao, valorUnit:i.valor, qtd:1})),
-    ...r.itensExtras.map(i=>({tipo:'servico', refId:'', nome:i.descricao, valorUnit:i.valor, qtd:1}))
+    ...r.itensExtras.map(i=>({tipo:'servico', refId:'', nome:i.descricao, valorUnit:i.valor, qtd:i.qtd||1}))
   ];
   return {clienteId:r.clienteId||'', clienteNome:r.clienteNome||'', data:todayStr(), formaPagamento:(r.condicoes&&r.condicoes[0])||'Pix', obs:'Venda gerada a partir do relatório de serviço.', itens, temDesconto:false, desconto:0};
 }
@@ -1464,7 +1464,7 @@ function renderReportList(){
   const rows = list.map(r=>`<tr>
     <td data-label="Data">${formatDateBR(r.data)}</td>
     <td data-label="Cliente">${escapeHtml(clientName(r.clienteId)||r.clienteNome||'—')}</td>
-    <td data-label="Total" class="num" style="font-weight:700;">${fmt((r.itensPrevistos||[]).filter(i=>i.checked).reduce((s,i)=>s+i.valor,0)+(r.itensExtras||[]).reduce((s,i)=>s+i.valor,0))}</td>
+    <td data-label="Total" class="num" style="font-weight:700;">${fmt((r.itensPrevistos||[]).filter(i=>i.checked).reduce((s,i)=>s+i.valor,0)+(r.itensExtras||[]).reduce((s,i)=>s+i.valor*(i.qtd||1),0))}</td>
     <td><div class="row-actions">
       <button class="icon-btn" data-action="edit-report" data-id="${r.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="print-report" data-id="${r.id}">${printIcon}</button>
@@ -1504,7 +1504,7 @@ function renderReportEditor(){
       <button class="icon-btn" data-action="report-aparelho-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   const totalPrev = d.itensPrevistos.filter(i=>i.checked).reduce((s,i)=>s+i.valor,0);
-  const totalExtra = d.itensExtras.reduce((s,i)=>s+i.valor,0);
+  const totalExtra = d.itensExtras.reduce((s,i)=>s+i.valor*(i.qtd||1),0);
   const prevRows = d.itensPrevistos.map((it,idx)=>`
     <div class="check-item">
       <label>${escapeHtml(it.descricao)} — <span class="num">${fmt(it.valor)}</span> <span style="color:var(--ink-soft);font-weight:400;">(preço do orçamento, fixo)</span></label>
@@ -1515,8 +1515,8 @@ function renderReportEditor(){
     </div>`).join('') || `<div class="empty-state" style="padding:14px 0;">Nenhum item do orçamento (relatório avulso).</div>`;
   const extraRows = d.itensExtras.map((it,idx)=>`
     <div class="item-row" style="grid-template-columns:1fr 120px 32px;">
-      <div>${escapeHtml(it.descricao)}</div>
-      <div class="num" style="text-align:right;">${fmt(it.valor)}</div>
+      <div>${it.qtd>1?it.qtd+'x ':''}${escapeHtml(it.descricao)}</div>
+      <div class="num" style="text-align:right;">${fmt(it.valor*(it.qtd||1))}</div>
       <button class="icon-btn" data-action="report-extra-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   const temItensOrcamento = d.itensPrevistos.length > 0;
@@ -1541,17 +1541,22 @@ function renderReportEditor(){
     <div style="margin-top:6px;">${aparelhoRows}</div>
     ${temItensOrcamento? orcamentoBlock : ''}
     <div class="section-title">Itens extras <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do orçamento, preço aberto</span></div>
-    <div class="field"><label>Adicionar do catálogo (produto, serviço ou material já precificado)</label>
-      <select data-action="report-add-catalogo">
-        <option value="">Selecionar...</option>
-        ${STATE.products.length? `<optgroup label="Produtos">${STATE.products.map(p=>`<option value="produto:${p.id}">${escapeHtml(p.nome)} — ${fmt(p.preco)}</option>`).join('')}</optgroup>` : ''}
-        ${STATE.services.length? `<optgroup label="Serviços">${STATE.services.map(s=>`<option value="servico:${s.id}">${escapeHtml(s.nome)} — ${fmt(s.preco)}</option>`).join('')}</optgroup>` : ''}
-        ${STATE.materials.length? `<optgroup label="Materiais">${STATE.materials.map(m=>`<option value="material:${m.id}">${escapeHtml(m.nome)} — ${fmt(m.preco)}</option>`).join('')}</optgroup>` : ''}
-      </select>
+    <div class="field-grid">
+      <div class="field span2"><label>Adicionar do catálogo (produto, serviço ou material já precificado)</label>
+        <select id="extra-catalogo">
+          <option value="">Selecionar...</option>
+          ${STATE.products.length? `<optgroup label="Produtos">${STATE.products.map(p=>`<option value="produto:${p.id}">${escapeHtml(p.nome)} — ${fmt(p.preco)}</option>`).join('')}</optgroup>` : ''}
+          ${STATE.services.length? `<optgroup label="Serviços">${STATE.services.map(s=>`<option value="servico:${s.id}">${escapeHtml(s.nome)} — ${fmt(s.preco)}</option>`).join('')}</optgroup>` : ''}
+          ${STATE.materials.length? `<optgroup label="Materiais">${STATE.materials.map(m=>`<option value="material:${m.id}">${escapeHtml(m.nome)} — ${fmt(m.preco)}</option>`).join('')}</optgroup>` : ''}
+        </select>
+      </div>
+      <div class="field"><label>Quantidade</label><input id="extra-catalogo-qtd" type="number" min="1" value="1"></div>
+      <button class="btn" style="margin-top:22px;" data-action="report-add-extra-catalogo">+ Adicionar</button>
     </div>
     <div class="field-grid">
       <div class="field span2"><label>Descrição (item avulso, fora do catálogo)</label><input id="extra-desc"></div>
-      <div class="field"><label>Valor (R$)</label><input id="extra-valor" type="text" inputmode="decimal"></div>
+      <div class="field"><label>Valor unitário (R$)</label><input id="extra-valor" type="text" inputmode="decimal"></div>
+      <div class="field"><label>Quantidade</label><input id="extra-qtd" type="number" min="1" value="1"></div>
       <button class="btn" style="margin-top:22px;" data-action="report-add-extra">+ Adicionar</button>
     </div>
     <div style="margin-top:6px;">${extraRows}</div>
@@ -1916,8 +1921,11 @@ function printBudget(id){
 function printReport(id){
   const r = STATE.serviceReports.find(x=>x.id===id); if(!r) return;
   const c = clientById(r.clienteId);
-  const itens = [...r.itensPrevistos.filter(i=>i.checked), ...r.itensExtras].map(i=>`<div class="doc-item"><span>${escapeHtml(i.descricao)}</span><b>${fmt(i.valor)}</b></div>`).join('');
-  const total = r.itensPrevistos.filter(i=>i.checked).reduce((s,i)=>s+i.valor,0) + r.itensExtras.reduce((s,i)=>s+i.valor,0);
+  const itens = [
+    ...r.itensPrevistos.filter(i=>i.checked).map(i=>`<div class="doc-item"><span>${escapeHtml(i.descricao)}</span><b>${fmt(i.valor)}</b></div>`),
+    ...r.itensExtras.map(i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><b>${fmt(i.valor*(i.qtd||1))}</b></div>`)
+  ].join('');
+  const total = r.itensPrevistos.filter(i=>i.checked).reduce((s,i)=>s+i.valor,0) + r.itensExtras.reduce((s,i)=>s+i.valor*(i.qtd||1),0);
   printNow(`
     ${docHead('SERVIÇOS REALIZADOS')}
     <div class="doc-body">
@@ -2161,8 +2169,19 @@ document.addEventListener('click', async (e)=>{
   if(action==='report-add-extra'){
     const desc = document.getElementById('extra-desc').value.trim();
     const val = parseMoney(document.getElementById('extra-valor').value);
+    const qtd = Math.max(1, parseInt(document.getElementById('extra-qtd').value||1));
     if(!desc){ toast('Preencha a descrição do item.'); return; }
-    reportDraft.itensExtras.push({descricao:desc, valor:val}); render(); return;
+    reportDraft.itensExtras.push({descricao:desc, valor:val, qtd}); render(); return;
+  }
+  if(action==='report-add-extra-catalogo'){
+    const sel = document.getElementById('extra-catalogo');
+    if(!sel.value){ toast('Selecione um item do catálogo.'); return; }
+    const [tipo, id] = sel.value.split(':');
+    const catalogo = tipo==='produto'? STATE.products : tipo==='material'? STATE.materials : STATE.services;
+    const item = catalogo.find(x=>x.id===id);
+    if(!item) return;
+    const qtd = Math.max(1, parseInt(document.getElementById('extra-catalogo-qtd').value||1));
+    reportDraft.itensExtras.push({descricao:item.nome, valor:item.preco, qtd}); render(); return;
   }
   if(action==='report-extra-rm'){ reportDraft.itensExtras.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='report-add-aparelho'){
@@ -2249,13 +2268,6 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='budget-add-catalogo' && el.value){
     const s = STATE.services.find(x=>x.id===el.value);
     if(s) budgetDraft.itens.push({descricao:s.nome, valor:s.preco, qtd:1, servicoId:s.id});
-    el.value=''; render(); return;
-  }
-  if(el.dataset.action==='report-add-catalogo' && el.value){
-    const [tipo, id] = el.value.split(':');
-    const catalogo = tipo==='produto'? STATE.products : tipo==='material'? STATE.materials : STATE.services;
-    const item = catalogo.find(x=>x.id===id);
-    if(item) reportDraft.itensExtras.push({descricao:item.nome, valor:item.preco});
     el.value=''; render(); return;
   }
   if(el.dataset.action==='sale-add-product' && el.value){
