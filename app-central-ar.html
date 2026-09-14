@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.10.5';
+const APP_VERSION = 'v1.11.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1541,11 +1541,12 @@ function renderReportEditor(){
     <div style="margin-top:6px;">${aparelhoRows}</div>
     ${temItensOrcamento? orcamentoBlock : ''}
     <div class="section-title">Itens extras <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do orçamento, preço aberto</span></div>
-    <div class="field"><label>Adicionar do catálogo (produto ou serviço já precificado)</label>
+    <div class="field"><label>Adicionar do catálogo (produto, serviço ou material já precificado)</label>
       <select data-action="report-add-catalogo">
         <option value="">Selecionar...</option>
         ${STATE.products.length? `<optgroup label="Produtos">${STATE.products.map(p=>`<option value="produto:${p.id}">${escapeHtml(p.nome)} — ${fmt(p.preco)}</option>`).join('')}</optgroup>` : ''}
         ${STATE.services.length? `<optgroup label="Serviços">${STATE.services.map(s=>`<option value="servico:${s.id}">${escapeHtml(s.nome)} — ${fmt(s.preco)}</option>`).join('')}</optgroup>` : ''}
+        ${STATE.materials.length? `<optgroup label="Materiais">${STATE.materials.map(m=>`<option value="material:${m.id}">${escapeHtml(m.nome)} — ${fmt(m.preco)}</option>`).join('')}</optgroup>` : ''}
       </select>
     </div>
     <div class="field-grid">
@@ -2252,7 +2253,8 @@ document.addEventListener('change', async (e)=>{
   }
   if(el.dataset.action==='report-add-catalogo' && el.value){
     const [tipo, id] = el.value.split(':');
-    const item = (tipo==='produto'? STATE.products : STATE.services).find(x=>x.id===id);
+    const catalogo = tipo==='produto'? STATE.products : tipo==='material'? STATE.materials : STATE.services;
+    const item = catalogo.find(x=>x.id===id);
     if(item) reportDraft.itensExtras.push({descricao:item.nome, valor:item.preco});
     el.value=''; render(); return;
   }
