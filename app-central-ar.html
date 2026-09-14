@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.7.3';
+const APP_VERSION = 'v1.7.4';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2085,7 +2085,6 @@ document.addEventListener('click', async (e)=>{
     const desc = document.getElementById('item-desc-aberto').value.trim();
     const val = parseMoney(document.getElementById('item-valor-aberto').value);
     if(!desc){ toast('Preencha a descrição do item.'); return; }
-    if(!val){ toast('Preencha um valor válido pro item.'); return; }
     budgetDraft.itens.push({descricao:desc, valor:val, qtd:1}); render(); return;
   }
   if(action==='budget-item-rm'){ budgetDraft.itens.splice(+btn.dataset.idx,1); render(); return; }
@@ -2113,7 +2112,6 @@ document.addEventListener('click', async (e)=>{
     const desc = document.getElementById('extra-desc').value.trim();
     const val = parseMoney(document.getElementById('extra-valor').value);
     if(!desc){ toast('Preencha a descrição do item.'); return; }
-    if(!val){ toast('Preencha um valor válido pro item.'); return; }
     reportDraft.itensExtras.push({descricao:desc, valor:val}); render(); return;
   }
   if(action==='report-extra-rm'){ reportDraft.itensExtras.splice(+btn.dataset.idx,1); render(); return; }
