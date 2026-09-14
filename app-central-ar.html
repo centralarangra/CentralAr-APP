@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.10.2';
+const APP_VERSION = 'v1.10.3';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1644,6 +1644,27 @@ function compressImage(file){
     reader.readAsDataURL(file);
   });
 }
+function compressLogo(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const maxW = 300;
+        const scale = Math.min(1, maxW/img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width*scale); canvas.height = Math.round(img.height*scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 /* --- Checklist de manutenção --- */
 function newChecklistDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), infoServico:'', ativo:'', itens:{limpeza:true,eletrico:true,lubrificacao:true,mecanico:true,refrigeracao:true}, diagnostico:'', tecnico:'', assinaturaDataUrl:''}; }
@@ -2271,7 +2292,7 @@ document.addEventListener('change', async (e)=>{
 
   if(el.id==='logo-file-input'){
     const file = el.files[0];
-    if(file){ const dataUrl = await compressImage(file); await saveEmpresa({logoDataUrl:dataUrl}); render(); }
+    if(file){ const dataUrl = await compressLogo(file); await saveEmpresa({logoDataUrl:dataUrl}); render(); }
     return;
   }
   if(el.id==='photo-file-input'){
