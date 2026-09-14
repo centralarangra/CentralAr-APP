@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.11.1';
+const APP_VERSION = 'v1.11.2';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1834,7 +1834,7 @@ function docHead(title, subtitle){
   return `<div class="doc-head"><img class="doc-corner-img" src="${DOC_CORNER_IMG}" alt=""><div class="doc-head-inner">${brandMarkHtml(46)}<div><div class="doc-brand-name">${escapeHtml(EMPRESA.nome)}</div><div class="doc-brand-slogan">${escapeHtml(EMPRESA.slogan)}</div></div></div>
   <div class="doc-title">${title}</div>${subtitle?`<div class="doc-subtitle">${subtitle}</div>`:''}</div>`;
 }
-function docFoot(showSignBox=true){
+function docFoot(){
   const pinIcon = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#0F2A52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.58 7-12a7 7 0 10-14 0c0 4.42 7 12 7 12z"/><circle cx="12" cy="9" r="2.4"/></svg>`;
   const waIcon = `<img src="${DOC_WA_ICON_IMG}" width="15" height="15" alt="" style="display:inline-block;vertical-align:top;">`;
   return `<div class="doc-foot">
@@ -1842,7 +1842,7 @@ function docFoot(showSignBox=true){
       <div class="doc-foot-row">${pinIcon}<div>${escapeHtml(EMPRESA.endereco)}</div></div>
       <div class="doc-foot-row">${waIcon}<div>${escapeHtml(EMPRESA.whatsapp1)}${EMPRESA.whatsapp2?`<br>${escapeHtml(EMPRESA.whatsapp2)}`:''}</div></div>
     </div>
-    ${showSignBox? `<div class="doc-sign-box"></div>` : ''}
+    <div class="doc-sign-box"></div>
   </div>
   <img class="doc-bottom-img" src="${DOC_BOTTOM_IMG}" alt="">`;
 }
@@ -1941,7 +1941,7 @@ function printReport(id){
         ${c?.endereco? `<div class="doc-meta" style="grid-column:1/-1;"><b>Endereço</b>${escapeHtml(c.endereco)}</div>`:''}
       </div>
     </div>
-    ${docFoot(false)}`, 'Serviços realizados');
+    ${docFoot()}`, 'Serviços realizados');
 }
 function printChecklist(id){
   const c = STATE.checklists.find(x=>x.id===id); if(!c) return;
