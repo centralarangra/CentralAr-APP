@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.10.3';
+const APP_VERSION = 'v1.10.4';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1519,6 +1519,10 @@ function renderReportEditor(){
       <div class="num" style="text-align:right;">${fmt(it.valor)}</div>
       <button class="icon-btn" data-action="report-extra-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
+  const temItensOrcamento = d.itensPrevistos.length > 0;
+  const orcamentoBlock = `
+    <div class="section-title">Itens do orçamento <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— inclua ou remova, o preço não muda</span></div>
+    ${prevRows}`;
   return `
   <div class="editor-card">
     <div class="section-title" style="margin-top:0;">${d.id? 'Editando relatório' : 'Novo relatório'}</div>
@@ -1535,8 +1539,7 @@ function renderReportEditor(){
       <button class="btn" style="margin-top:22px;" data-action="report-add-aparelho">+ Adicionar</button>
     </div>
     <div style="margin-top:6px;">${aparelhoRows}</div>
-    <div class="section-title">Itens do orçamento <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— inclua ou remova, o preço não muda</span></div>
-    ${prevRows}
+    ${temItensOrcamento? orcamentoBlock : ''}
     <div class="section-title">Itens extras <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do orçamento, preço aberto</span></div>
     <div class="field"><label>Adicionar do catálogo (produto ou serviço já precificado)</label>
       <select data-action="report-add-catalogo">
@@ -1551,6 +1554,7 @@ function renderReportEditor(){
       <button class="btn" style="margin-top:22px;" data-action="report-add-extra">+ Adicionar</button>
     </div>
     <div style="margin-top:6px;">${extraRows}</div>
+    ${!temItensOrcamento? orcamentoBlock : ''}
     <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total geral</span><span class="num">${fmt(totalPrev+totalExtra)}</span></div>
     <div class="field" style="margin-top:14px;"><label>Condição de pagamento</label>
       <div class="chips" style="margin:0;">
