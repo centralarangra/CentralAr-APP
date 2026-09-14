@@ -283,7 +283,7 @@ tr:hover td{background:var(--paper);}
 .print-overlay-bar{max-width:800px;margin:0 auto 16px;padding:0 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
 .print-overlay-title{font-family:'Poppins',sans-serif;font-weight:700;font-size:15px;color:#13203A;}
 .doc-sheet{background:#fff;color:#101B2B;width:800px;max-width:800px;flex:none;margin:0 auto;border-radius:0;overflow:hidden;position:relative;font-size:13.5px;}
-.doc-head{position:relative;padding:30px 34px 22px;overflow:hidden;min-height:255px;}
+.doc-head{position:relative;padding:30px 34px 22px;}
 .doc-corner-img{position:absolute;top:0;right:0;width:38.9%;height:auto;z-index:1;pointer-events:none;}
 .doc-head-inner{position:relative;z-index:2;display:flex;align-items:center;gap:14px;}
 .doc-logo{height:46px;width:auto;flex:none;}
@@ -291,7 +291,7 @@ tr:hover td{background:var(--paper);}
 .doc-brand-slogan{font-size:10.5px;color:#5B6B7D;letter-spacing:.3px;}
 .doc-title{position:relative;z-index:3;font-family:'Poppins',sans-serif;font-size:22px;font-weight:700;text-align:center;margin:18px 0 4px;color:#0F2A52;}
 .doc-subtitle{position:relative;z-index:3;text-align:center;font-size:13px;font-weight:700;color:#1B4A82;text-transform:uppercase;letter-spacing:.5px;margin-bottom:18px;}
-.doc-body{padding:0 34px;}
+.doc-body{position:relative;z-index:2;background:#fff;padding:0 34px;}
 .doc-meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;font-size:13px;}
 .doc-meta div b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#5B6B7D;margin-bottom:3px;}
 .doc-items{margin:10px 0 18px;}
@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.10.4';
+const APP_VERSION = 'v1.10.5';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
