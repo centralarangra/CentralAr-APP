@@ -287,7 +287,7 @@ tr:hover td{background:var(--paper);}
 .doc-corner-img{position:absolute;top:0;right:0;width:38.9%;height:auto;z-index:1;pointer-events:none;}
 .doc-head-inner{position:relative;z-index:2;display:flex;align-items:center;gap:14px;}
 .doc-logo{height:46px;width:auto;flex:none;}
-.doc-brand-name{font-family:'Poppins',sans-serif;font-weight:700;font-size:23px;color:#0F2A52;text-align:center;}
+.doc-brand-name{font-family:'Poppins',sans-serif;font-weight:700;font-size:30px;color:#0F2A52;text-align:center;}
 .doc-brand-slogan{font-size:9.5px;color:#5B6B7D;letter-spacing:.3px;text-align:center;}
 .doc-title{position:relative;z-index:3;font-family:'Poppins',sans-serif;font-size:22px;font-weight:700;text-align:center;margin:18px 0 4px;color:#0F2A52;}
 .doc-subtitle{position:relative;z-index:3;text-align:center;font-size:13px;font-weight:700;color:#1B4A82;text-transform:uppercase;letter-spacing:.5px;margin-bottom:18px;}
@@ -401,7 +401,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.11.11';
+const APP_VERSION = 'v1.11.12';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
