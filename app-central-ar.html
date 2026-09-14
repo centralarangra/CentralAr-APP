@@ -321,7 +321,7 @@ tr:hover td{background:var(--paper);}
   body *{visibility:hidden;}
   #print-root, #print-root *{visibility:visible;}
   #print-root{display:block;position:absolute;top:0;left:0;width:100%;margin:0;}
-  .doc-sheet{width:190mm !important;max-width:190mm !important;margin:10mm auto !important;}
+  .doc-sheet{width:210mm !important;max-width:210mm !important;margin:0 !important;}
   .no-print{display:none !important;}
 }
 </style>
@@ -400,7 +400,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.11.3';
+const APP_VERSION = 'v1.11.4';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
