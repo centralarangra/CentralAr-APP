@@ -409,7 +409,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.14.1';
+const APP_VERSION = 'v1.15.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -434,6 +434,14 @@ function parseMoney(str){
   return isNaN(n) ? 0 : n;
 }
 const formatDateBR = s => { if(!s) return '—'; const [y,m,d]=s.split('-'); return d+'/'+m+'/'+y; };
+function formatPhoneBR(str){
+  const d = String(str||'').replace(/\D/g,'').slice(0,11);
+  if(!d) return '';
+  if(d.length<=2) return `(${d}`;
+  if(d.length<=6) return `(${d.slice(0,2)}) ${d.slice(2)}`;
+  if(d.length<=10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+}
 function escapeHtml(s){ return (s===undefined||s===null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function clientName(id){ const c = STATE.clients.find(x=>x.id===id); return c? c.nome : ''; }
 function clientById(id){ return STATE.clients.find(x=>x.id===id); }
@@ -888,7 +896,7 @@ const ENTITY_CONFIG = {
       {key:'cidade', label:'Cidade', type:'text', col:1},
       {key:'obs', label:'Observações', type:'textarea', col:2}
     ],
-    listCols:[{key:'nome',label:'Nome'},{key:'telefone',label:'Telefone'},{key:'cidade',label:'Cidade'}] },
+    listCols:[{key:'nome',label:'Nome'},{key:'telefone',label:'Telefone', phone:true},{key:'cidade',label:'Cidade'}] },
   services:{ title:'Serviços', singular:'Serviço', icon:'🧰', desc:'Catálogo de serviços com valores — usado em orçamentos, vendas e relatórios.',
     fields:[
       {key:'nome', label:'Nome do serviço', type:'text', required:true, col:2},
@@ -935,7 +943,7 @@ function renderEntityList(key){
   let items = (STATE[key]||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   if(q) items = items.filter(it=> cfg.listCols.some(c=> (it[c.key]!==undefined?String(it[c.key]):'').toLowerCase().includes(q)) || (it.nome||'').toLowerCase().includes(q));
   const rows = items.map(it=>`<tr>
-    ${cfg.listCols.map(c=>`<td data-label="${escapeHtml(c.label)}">${c.money? '<span class="num">'+fmt(it[c.key]||0)+'</span>' : c.pill? statusPill(it[c.key]) : escapeHtml(it[c.key]||'—')}</td>`).join('')}
+    ${cfg.listCols.map(c=>`<td data-label="${escapeHtml(c.label)}">${c.money? '<span class="num">'+fmt(it[c.key]||0)+'</span>' : c.pill? statusPill(it[c.key]) : c.phone? escapeHtml(formatPhoneBR(it[c.key])||'—') : escapeHtml(it[c.key]||'—')}</td>`).join('')}
     <td><div class="row-actions">
       <button class="icon-btn" data-action="edit-entity" data-entity="${key}" data-id="${it.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="delete-entity" data-entity="${key}" data-id="${it.id}" title="Excluir">${trashIcon}</button>
@@ -980,7 +988,7 @@ async function handleEntityForm(form){
   const key = form.dataset.entity, id = form.dataset.id, cfg = ENTITY_CONFIG[key];
   const fd = new FormData(form);
   const data = {};
-  cfg.fields.forEach(f=> data[f.key] = f.type==='number'? parseMoney(fd.get(f.key)) : (fd.get(f.key)||''));
+  cfg.fields.forEach(f=> data[f.key] = f.type==='number'? parseMoney(fd.get(f.key)) : f.type==='tel'? formatPhoneBR(fd.get(f.key)) : (fd.get(f.key)||''));
   if(id) await db.collection(key).doc(id).update(data);
   else await db.collection(key).add(data);
   closeModal();
@@ -1852,8 +1860,8 @@ function renderConfig(){
       <div class="field"><label>Slogan / atividade</label><input name="slogan" value="${escapeHtml(EMPRESA.slogan)}"></div>
       <div class="field"><label>Endereço</label><input name="endereco" value="${escapeHtml(EMPRESA.endereco)}"></div>
       <div class="field-grid">
-        <div class="field"><label>WhatsApp 1</label><input name="whatsapp1" value="${escapeHtml(EMPRESA.whatsapp1)}"></div>
-        <div class="field"><label>WhatsApp 2</label><input name="whatsapp2" value="${escapeHtml(EMPRESA.whatsapp2)}"></div>
+        <div class="field"><label>WhatsApp 1</label><input name="whatsapp1" type="tel" value="${escapeHtml(EMPRESA.whatsapp1)}"></div>
+        <div class="field"><label>WhatsApp 2</label><input name="whatsapp2" type="tel" value="${escapeHtml(EMPRESA.whatsapp2)}"></div>
         <div class="field"><label>Instagram</label><input name="instagram" value="${escapeHtml(EMPRESA.instagram)}"></div>
         <div class="field"><label>Garantia (dias)</label><input name="garantiaDias" type="number" value="${EMPRESA.garantiaDias}"></div>
       </div>
@@ -1916,7 +1924,7 @@ function docFoot(){
   return `<div class="doc-foot">
     <div class="doc-foot-left">
       <div class="doc-foot-row">${pinIcon}<div>${escapeHtml(EMPRESA.endereco)}</div></div>
-      <div class="doc-foot-row">${waIcon}<div>${escapeHtml(EMPRESA.whatsapp1)}${EMPRESA.whatsapp2?`<br>${escapeHtml(EMPRESA.whatsapp2)}`:''}</div></div>
+      <div class="doc-foot-row">${waIcon}<div>${escapeHtml(formatPhoneBR(EMPRESA.whatsapp1))}${EMPRESA.whatsapp2?`<br>${escapeHtml(formatPhoneBR(EMPRESA.whatsapp2))}`:''}</div></div>
     </div>
     <div class="doc-sign-box"></div>
   </div>
@@ -2000,7 +2008,7 @@ function printBudget(id){
         <div><b>Cliente</b>${escapeHtml(c?.nome || b.clienteNome || '—')}</div>
         <div><b>Data</b>${formatDateBR(b.data)} · válido por ${b.validadeDias||15} dias</div>
         ${c?.endereco? `<div><b>Endereço</b>${escapeHtml(c.endereco)}</div>`:''}
-        ${c?.telefone? `<div><b>Contato</b>${escapeHtml(c.telefone)}</div>`:''}
+        ${c?.telefone? `<div><b>Contato</b>${escapeHtml(formatPhoneBR(c.telefone))}</div>`:''}
       </div>
       <div class="doc-items">${itens}</div>
       <div class="doc-total"><span>Total</span><span>${fmt(b.total||0)}</span></div>
@@ -2565,6 +2573,7 @@ document.addEventListener('change', async (e)=>{
 
 document.addEventListener('input', (e)=>{
   const el = e.target;
+  if(el.type==='tel'){ el.value = formatPhoneBR(el.value); return; }
   if(el.dataset.liveInput==='crud-search'){ uiState.crudSearch[el.dataset.entity] = el.value; render(); return; }
   if(el.dataset.action==='photo-legenda'){ photoDraft.fotos[+el.dataset.idx].legenda = el.value; return; }
   if(el.dataset.liveInput==='sale-cliente-nome'){ saleDraft.clienteNome = el.value; return; }
@@ -2606,7 +2615,7 @@ document.addEventListener('submit', async (e)=>{
   else if(type==='appt') await handleApptForm(form);
   else if(type==='empresa'){
     const fd = new FormData(form);
-    await saveEmpresa({nome:fd.get('nome'), slogan:fd.get('slogan'), endereco:fd.get('endereco'), whatsapp1:fd.get('whatsapp1'), whatsapp2:fd.get('whatsapp2'), instagram:fd.get('instagram'), garantiaDias:parseInt(fd.get('garantiaDias')||90)});
+    await saveEmpresa({nome:fd.get('nome'), slogan:fd.get('slogan'), endereco:fd.get('endereco'), whatsapp1:formatPhoneBR(fd.get('whatsapp1')), whatsapp2:formatPhoneBR(fd.get('whatsapp2')), instagram:fd.get('instagram'), garantiaDias:parseInt(fd.get('garantiaDias')||90)});
     toast('Dados da empresa atualizados!');
   }
 });
