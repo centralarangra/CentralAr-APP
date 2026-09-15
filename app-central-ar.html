@@ -401,8 +401,8 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.11.13';
-const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[]};
+const APP_VERSION = 'v1.12.0';
+const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
 let downloadsApi = null;
@@ -595,7 +595,7 @@ function createLocalDb(){
   return { doc:(p)=>{ const parts=p.split('/'); const id=parts.pop(); return makeDocRef(parts.join('/'),id); }, collection:(p)=>makeCollRef(p) };
 }
 
-const COLLECTIONS = ['clients','services','products','materials','employees','categories','transactions','sales','appointments','budgets','serviceReports','checklists','photoReports'];
+const COLLECTIONS = ['clients','services','products','materials','employees','categories','transactions','sales','appointments','budgets','serviceReports','checklists','photoReports','fixedExpenses'];
 let unsubscribers = [];
 function subscribeAll(){
   unsubscribers.forEach(u=>{ try{ u(); }catch(e){} });
@@ -1008,6 +1008,7 @@ function renderPainel(){
   const saldo = entradas - saidas;
   const vendasMes = STATE.sales.filter(s=>(s.data||'').slice(0,7)===m).reduce((s,v)=>s+(v.total||0),0);
   const orcAbertos = STATE.budgets.filter(b=>b.status==='Aberto').length;
+  const gastosFixosMes = STATE.fixedExpenses.reduce((s,g)=>s+(g.valor||0),0);
 
   const today = todayStr();
   const tomorrow = todayStr(new Date(Date.now()+86400000));
@@ -1032,6 +1033,7 @@ function renderPainel(){
     <div class="card"><h3>Entradas</h3><div class="big num" style="color:var(--success)">${fmt(entradas)}</div><div class="sub">${txMes.filter(t=>t.tipo==='entrada').length} lançamento(s)</div></div>
     <div class="card"><h3>Saídas</h3><div class="big num" style="color:var(--danger)">${fmt(saidas)}</div><div class="sub">${txMes.filter(t=>t.tipo==='saida').length} lançamento(s)</div></div>
     <div class="card"><h3>Vendas do mês</h3><div class="big num">${fmt(vendasMes)}</div><div class="sub">${STATE.sales.filter(s=>(s.data||'').slice(0,7)===m).length} venda(s)</div></div>
+    <div class="card"><h3>Gastos fixos (mês)</h3><div class="big num" style="color:var(--danger)">${fmt(gastosFixosMes)}</div><div class="sub">${STATE.fixedExpenses.length} gasto(s) cadastrado(s)</div></div>
   </div>
   <div class="two-col" style="margin-top:16px;">
     <div class="card">
@@ -1058,7 +1060,41 @@ function effectiveStatus(t){
   if(t.status==='Pendente' && t.data && t.data < todayStr()) return 'Vencido';
   return t.status || 'Pago';
 }
+function finTabToggleHtml(){
+  return `<div class="tab-toggle" style="margin-bottom:0;">
+    <button data-action="fin-tipo" data-v="todos" class="${uiState.finTipo==='todos'?'active':''}">Todos</button>
+    <button data-action="fin-tipo" data-v="entrada" class="${uiState.finTipo==='entrada'?'active':''}">Recebimentos</button>
+    <button data-action="fin-tipo" data-v="saida" class="${uiState.finTipo==='saida'?'active':''}">Pagamentos</button>
+    <button data-action="fin-tipo" data-v="fixos" class="${uiState.finTipo==='fixos'?'active':''}">Gastos Fixos</button>
+  </div>`;
+}
+function renderGastosFixos(){
+  const total = STATE.fixedExpenses.reduce((s,g)=>s+(g.valor||0),0);
+  const rows = STATE.fixedExpenses.slice().sort((a,b)=>(a.descricao||'').localeCompare(b.descricao||'')).map(g=>`<tr>
+    <td data-label="Descrição">${escapeHtml(g.descricao)}</td>
+    <td data-label="Valor mensal" class="num" style="font-weight:700;">${fmt(g.valor)}</td>
+    <td><div class="row-actions">
+      <button class="icon-btn" data-action="edit-fixed" data-id="${g.id}">${editIcon}</button>
+      <button class="icon-btn" data-action="delete-fixed" data-id="${g.id}">${trashIcon}</button>
+    </div></td>
+  </tr>`).join('');
+  return `
+  <div class="page-head">
+    <div><h1>Financeiro</h1><p>Fluxo de caixa — lance manualmente tudo que entra e sai da empresa.</p></div>
+    <button class="btn primary" data-action="new-fixed">+ Novo gasto fixo</button>
+  </div>
+  <div class="grid g4">
+    <div class="card"><h3>Gastos fixos por mês</h3><div class="big num" style="color:var(--danger)">${fmt(total)}</div><div class="sub">Aluguel, salários, impostos e outras contas recorrentes</div></div>
+  </div>
+  <div style="margin-top:22px;">${finTabToggleHtml()}</div>
+  <p style="color:var(--ink-soft);font-size:12.5px;margin:10px 0 0;">Lista de referência — não entra automaticamente no saldo. Continue lançando o pagamento normalmente (aba Pagamentos) quando ele sair da conta.</p>
+  <div class="table-wrap" style="margin-top:14px;">
+    ${STATE.fixedExpenses.length? `<table><thead><tr><th>Descrição</th><th>Valor mensal</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<div class="empty-state"><div class="display">Nenhum gasto fixo cadastrado</div>Cadastre aluguel, salários, impostos e outras contas que se repetem todo mês.</div>`}
+  </div>`;
+}
 function renderFinanceiro(){
+  if(uiState.finTipo==='fixos') return renderGastosFixos();
   const m = uiState.finMonth || monthStr();
   const months = Array.from(new Set(STATE.transactions.map(t=>(t.data||'').slice(0,7))));
   if(!months.includes(monthStr())) months.push(monthStr());
@@ -1098,11 +1134,7 @@ function renderFinanceiro(){
     <div class="card"><h3>A pagar</h3><div class="big num" style="color:var(--danger)">${fmt(aPagar)}</div><div class="sub">Contas pendentes</div></div>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-top:22px;">
-    <div class="tab-toggle" style="margin-bottom:0;">
-      <button data-action="fin-tipo" data-v="todos" class="${uiState.finTipo==='todos'?'active':''}">Todos</button>
-      <button data-action="fin-tipo" data-v="entrada" class="${uiState.finTipo==='entrada'?'active':''}">Recebimentos</button>
-      <button data-action="fin-tipo" data-v="saida" class="${uiState.finTipo==='saida'?'active':''}">Pagamentos</button>
-    </div>
+    ${finTabToggleHtml()}
     <select data-action="fin-month" style="padding:9px 12px;border-radius:9px;border:1px solid var(--line);background:var(--surface);font-size:16px;">
       ${months.map(mo=>{const [y,mm]=mo.split('-'); return `<option value="${mo}" ${mo===m?'selected':''}>${new Date(y,mm-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</option>`;}).join('')}
     </select>
@@ -1145,6 +1177,29 @@ async function handleTxForm(form){
   const data = {tipo:fd.get('tipo'), descricao:fd.get('descricao'), valor:parseMoney(fd.get('valor')), data:fd.get('data'), categoria:fd.get('categoria'), formaPagamento:fd.get('formaPagamento'), status:fd.get('status')||'Pago'};
   if(id) await db.collection('transactions').doc(id).update(data);
   else await db.collection('transactions').add(data);
+  closeModal();
+}
+
+function fixedExpenseModalHtml(g){
+  const isEdit = !!g;
+  g = g || {id:'', descricao:'', valor:''};
+  return `
+  <h2>${isEdit?'Editar':'Novo'} gasto fixo</h2>
+  <form data-form="fixedExpense" data-id="${g.id}">
+    <div class="field"><label>Descrição</label><input name="descricao" value="${escapeHtml(g.descricao)}" placeholder="Ex: Aluguel, Salário João, Impostos" required></div>
+    <div class="field"><label>Valor mensal (R$)</label><input name="valor" type="text" inputmode="decimal" required value="${g.valor}"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn primary">${isEdit?'Salvar':'Cadastrar'}</button>
+    </div>
+  </form>`;
+}
+async function handleFixedExpenseForm(form){
+  const id = form.dataset.id;
+  const fd = new FormData(form);
+  const data = {descricao:fd.get('descricao'), valor:parseMoney(fd.get('valor'))};
+  if(id) await db.collection('fixedExpenses').doc(id).update(data);
+  else await db.collection('fixedExpenses').add(data);
   closeModal();
 }
 
@@ -2113,6 +2168,9 @@ document.addEventListener('click', async (e)=>{
   if(action==='new-tx'){ openModal(txModalHtml(null)); bindTxToggle(); return; }
   if(action==='edit-tx'){ const rec = STATE.transactions.find(x=>x.id===btn.dataset.id); openModal(txModalHtml(rec)); bindTxToggle(); return; }
   if(action==='delete-tx'){ confirmDialog('Excluir este lançamento?', async ()=>{ await db.collection('transactions').doc(btn.dataset.id).delete(); }); return; }
+  if(action==='new-fixed'){ openModal(fixedExpenseModalHtml(null)); return; }
+  if(action==='edit-fixed'){ const rec = STATE.fixedExpenses.find(x=>x.id===btn.dataset.id); openModal(fixedExpenseModalHtml(rec)); return; }
+  if(action==='delete-fixed'){ confirmDialog('Excluir este gasto fixo?', async ()=>{ await db.collection('fixedExpenses').doc(btn.dataset.id).delete(); }); return; }
   if(action==='fin-tipo'){ uiState.finTipo = btn.dataset.v; render(); return; }
 
   // vendas
@@ -2361,6 +2419,7 @@ document.addEventListener('submit', async (e)=>{
   const type = form.dataset.form;
   if(type==='entity') await handleEntityForm(form);
   else if(type==='tx') await handleTxForm(form);
+  else if(type==='fixedExpense') await handleFixedExpenseForm(form);
   else if(type==='appt') await handleApptForm(form);
   else if(type==='empresa'){
     const fd = new FormData(form);
