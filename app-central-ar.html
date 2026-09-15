@@ -301,8 +301,9 @@ tr:hover td{background:var(--paper);}
 .doc-check-list{margin:8px 0 18px;}
 .doc-laudo-num{font-weight:700;margin:16px 0 6px;font-size:13.5px;}
 .doc-laudo-field{font-size:13px;color:#101B2B;margin:3px 0;}
-.doc-laudo-row{display:flex;gap:24px;}
-.doc-laudo-row .doc-laudo-field{flex:1;}
+.doc-laudo-row{display:flex;gap:20px;}
+.doc-laudo-row .doc-laudo-field:first-child{flex:0 0 320px;}
+.doc-laudo-row .doc-laudo-field:not(:first-child){flex:1;}
 .doc-laudo-bullet{margin:2px 0 2px 18px;font-size:13px;}
 .doc-laudo-produtos{display:flex;gap:14px;align-items:flex-start;margin:6px 0 4px;font-size:13px;}
 .doc-laudo-produtos img{width:150px;height:auto;border-radius:4px;flex:none;}
@@ -408,7 +409,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.13.3';
+const APP_VERSION = 'v1.13.4';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2139,16 +2140,16 @@ function printLaudo(id){
         <div class="doc-laudo-field">INSCRITA NO CPF/CNPJ: <b>${escapeHtml(l.cpfCnpj||'')}</b></div>
         <div class="doc-laudo-row">
           <div class="doc-laudo-field">SITU À RUA/AV: <b>${escapeHtml(l.endereco||'')}</b></div>
-          <div class="doc-laudo-field" style="flex:none;">Nº: <b>${escapeHtml(l.numero||'')}</b></div>
+          <div class="doc-laudo-field">Nº: <b>${escapeHtml(l.numero||'')}</b></div>
         </div>
         <div class="doc-laudo-row">
           <div class="doc-laudo-field">BAIRRO: <b>${escapeHtml(l.bairro||'')}</b></div>
-          <div class="doc-laudo-field" style="flex:none;">INF.ADIC: <b>${escapeHtml(l.infAdic||'')}</b></div>
+          <div class="doc-laudo-field">INF.ADIC: <b>${escapeHtml(l.infAdic||'')}</b></div>
         </div>
         <div class="doc-laudo-row">
           <div class="doc-laudo-field">CIDADE: <b>${escapeHtml(l.cidade||'')}</b></div>
-          <div class="doc-laudo-field" style="flex:none;">CEP: <b>${escapeHtml(l.cep||'')}</b></div>
-          <div class="doc-laudo-field" style="flex:none;">UF: <b>${escapeHtml(l.uf||'')}</b></div>
+          <div class="doc-laudo-field" style="flex:0 0 140px;">CEP: <b>${escapeHtml(l.cep||'')}</b></div>
+          <div class="doc-laudo-field" style="flex:0 0 80px;">UF: <b>${escapeHtml(l.uf||'')}</b></div>
         </div>
       </div>
       <div class="doc-laudo-num">1. REALIZOU A LIMPEZA DOS SEGUINTES APARELHOS ABAIXO DESCRITOS:</div>
