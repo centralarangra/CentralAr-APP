@@ -408,7 +408,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.13.1';
+const APP_VERSION = 'v1.13.2';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2567,6 +2567,14 @@ document.addEventListener('input', (e)=>{
   if(el.dataset.liveInput==='laudo-cidade'){ laudoDraft.cidade = el.value; return; }
   if(el.dataset.liveInput==='laudo-cep'){ laudoDraft.cep = el.value; return; }
   if(el.dataset.liveInput==='laudo-uf'){ laudoDraft.uf = el.value; return; }
+});
+
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Enter' && e.target && (e.target.id==='laudo-aparelho-desc' || e.target.id==='laudo-aparelho-qtd')){
+    e.preventDefault();
+    const btn = document.querySelector('[data-action="laudo-add-aparelho"]');
+    if(btn) btn.click();
+  }
 });
 
 document.addEventListener('submit', async (e)=>{
