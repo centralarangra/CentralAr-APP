@@ -409,7 +409,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.14.0';
+const APP_VERSION = 'v1.14.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1994,7 +1994,7 @@ function printBudget(id){
   const c = clientById(b.clienteId);
   const itens = b.itens.map(i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><b>${fmt(i.valor*i.qtd)}</b></div>`).join('');
   printNow(`
-    ${docHead('ORÇAMENTO', 'Nº '+(b.numero||'—'))}
+    ${docHead('ORÇAMENTO')}
     <div class="doc-body">
       <div class="doc-meta">
         <div><b>Cliente</b>${escapeHtml(c?.nome || b.clienteNome || '—')}</div>
@@ -2006,7 +2006,6 @@ function printBudget(id){
       <div class="doc-total"><span>Total</span><span>${fmt(b.total||0)}</span></div>
       ${b.obs? `<div class="doc-obs">${escapeHtml(b.obs)}</div>`:''}
       <div class="doc-obs">Garantia de ${EMPRESA.garantiaDias} dias sobre o serviço realizado, contados a partir da conclusão.</div>
-      <div class="doc-sign"><div><div class="line">Responsável técnico</div></div></div>
     </div>
     ${docFoot()}`, `Orçamento nº ${b.numero||''}`);
 }
