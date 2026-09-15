@@ -409,7 +409,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.13.4';
+const APP_VERSION = 'v1.14.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1479,8 +1479,17 @@ function renderBudgetEditor(){
     </div>
     <div class="section-title">Itens do orçamento</div>
     ${d.modo==='fechado' ? `
-    <div class="field"><label>Adicionar serviço do catálogo</label>
-      <select data-action="budget-add-catalogo"><option value="">Selecionar serviço...</option>${STATE.services.map(s=>`<option value="${s.id}">${escapeHtml(s.nome)} — ${fmt(s.preco)}</option>`).join('')}</select>
+    <div class="field-grid">
+      <div class="field span2"><label>Adicionar do catálogo (produto, serviço ou material)</label>
+        <select id="budget-catalogo">
+          <option value="">Selecionar...</option>
+          ${STATE.products.length? `<optgroup label="Produtos">${STATE.products.map(p=>`<option value="produto:${p.id}">${escapeHtml(p.nome)} — ${fmt(p.preco)}</option>`).join('')}</optgroup>` : ''}
+          ${STATE.services.length? `<optgroup label="Serviços">${STATE.services.map(s=>`<option value="servico:${s.id}">${escapeHtml(s.nome)} — ${fmt(s.preco)}</option>`).join('')}</optgroup>` : ''}
+          ${STATE.materials.length? `<optgroup label="Materiais">${STATE.materials.map(m=>`<option value="material:${m.id}">${escapeHtml(m.nome)} — ${fmt(m.preco)}</option>`).join('')}</optgroup>` : ''}
+        </select>
+      </div>
+      <div class="field"><label>Quantidade</label><input id="budget-catalogo-qtd" type="number" min="1" value="1"></div>
+      <button class="btn" style="margin-top:22px;" data-action="budget-add-catalogo-btn">+ Adicionar</button>
     </div>` : `
     <div class="field-grid">
       <div class="field span2"><label>Descrição do item</label><input id="item-desc-aberto" placeholder="Ex: Limpeza completa + ajuste elétrico"></div>
@@ -2334,7 +2343,16 @@ document.addEventListener('click', async (e)=>{
   if(action==='new-budget'){ budgetDraft = newBudgetDraft(); editingDraft=true; render(); return; }
   if(action==='cancel-budget'){ budgetDraft=null; editingDraft=false; render(); return; }
   if(action==='budget-modo'){ budgetDraft.modo = btn.dataset.v; budgetDraft.itens=[]; render(); return; }
-  if(action==='budget-add-catalogo'){ return; }
+  if(action==='budget-add-catalogo-btn'){
+    const sel = document.getElementById('budget-catalogo');
+    if(!sel.value){ toast('Selecione um item do catálogo.'); return; }
+    const [tipo, id] = sel.value.split(':');
+    const catalogo = tipo==='produto'? STATE.products : tipo==='material'? STATE.materials : STATE.services;
+    const item = catalogo.find(x=>x.id===id);
+    if(!item) return;
+    const qtd = Math.max(1, parseInt(document.getElementById('budget-catalogo-qtd').value||1));
+    budgetDraft.itens.push({descricao:item.nome, valor:item.preco, qtd}); render(); return;
+  }
   if(action==='budget-add-aberto'){
     const desc = document.getElementById('item-desc-aberto').value.trim();
     const val = parseMoney(document.getElementById('item-valor-aberto').value);
@@ -2490,11 +2508,6 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='sale-item-qtd'){ saleDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='sale-desconto-valor'){ saleDraft.desconto = parseMoney(el.value); render(); return; }
 
-  if(el.dataset.action==='budget-add-catalogo' && el.value){
-    const s = STATE.services.find(x=>x.id===el.value);
-    if(s) budgetDraft.itens.push({descricao:s.nome, valor:s.preco, qtd:1, servicoId:s.id});
-    el.value=''; render(); return;
-  }
   if(el.dataset.action==='sale-add-product' && el.value){
     const p = STATE.products.find(x=>x.id===el.value);
     if(p) saleDraft.itens.push({tipo:'produto', refId:p.id, nome:p.nome, valorUnit:p.preco, qtd:1});
