@@ -413,7 +413,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.16.0';
+const APP_VERSION = 'v1.16.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -679,7 +679,7 @@ function gdRequestToken(interactive){
 async function gdFetch(url, opts={}){
   opts.headers = {...(opts.headers||{}), Authorization: 'Bearer '+gdAccessToken};
   const res = await fetch(url, opts);
-  if(!res.ok){ const t = await res.text().catch(()=>''); throw new Error('Drive API '+res.status+': '+t); }
+  if(!res.ok){ const t = await res.text().catch(()=>''); throw new Error('Google API '+res.status+': '+t); }
   return res;
 }
 function defaultDriveData(){
@@ -862,51 +862,52 @@ async function deleteApptFromCalendar(googleEventId){
 }
 async function syncGoogleCalendarPull(){
   if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope || !SYNC_CONFIG.calendarId || !db) return;
-  try{
-    const winStart = new Date(Date.now() - 30*86400000);
-    const winEnd = new Date(Date.now() + 180*86400000);
-    const timeMin = winStart.toISOString(), timeMax = winEnd.toISOString();
-    let events = [], pageToken = '';
-    do{
-      const url = `https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=2500${pageToken?`&pageToken=${pageToken}`:''}`;
-      const res = await gdFetch(url);
-      const json = await res.json();
-      events = events.concat(json.items||[]);
-      pageToken = json.nextPageToken || '';
-    } while(pageToken);
-    events = events.filter(ev=>ev.status!=='cancelled' && ev.start);
-    const eventIds = new Set(events.map(e=>e.id));
-    const winStartStr = todayStr(winStart), winEndStr = todayStr(winEnd);
-    const toDelete = STATE.appointments.filter(a=> a.googleEventId && !eventIds.has(a.googleEventId) && a.data>=winStartStr && a.data<=winEndStr);
-    for(const a of toDelete){ await db.collection('appointments').doc(a.id).delete(); }
-    for(const ev of events){
-      const dt = ev.start.dateTime || (ev.start.date+'T00:00:00');
-      const d = new Date(dt);
-      const dataStr = todayStr(d);
-      const horaStr = ev.start.dateTime? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : '';
-      const existing = STATE.appointments.find(a=>a.googleEventId===ev.id);
-      if(existing){
-        const patch = {};
-        if(existing.data!==dataStr) patch.data = dataStr;
-        if(existing.hora!==horaStr) patch.hora = horaStr;
-        if((existing.obs||'')!==(ev.description||'')) patch.obs = ev.description||'';
-        if(!existing.clienteId && existing.clienteNome!==(ev.summary||'')) patch.clienteNome = ev.summary||'';
-        if(Object.keys(patch).length) await db.collection('appointments').doc(existing.id).update(patch);
-      } else {
-        await db.collection('appointments').add({
-          clienteId:'', clienteNome: ev.summary||'Evento da Google Agenda', servicoId:'', servicoDescricao:'',
-          data:dataStr, hora:horaStr, status:'Agendado', obs: ev.description||'', googleEventId: ev.id, origem:'google'
-        });
-      }
+  const winStart = new Date(Date.now() - 365*86400000);
+  const winEnd = new Date(Date.now() + 365*86400000);
+  const timeMin = winStart.toISOString(), timeMax = winEnd.toISOString();
+  let events = [], pageToken = '';
+  do{
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=2500${pageToken?`&pageToken=${pageToken}`:''}`;
+    const res = await gdFetch(url);
+    const json = await res.json();
+    events = events.concat(json.items||[]);
+    pageToken = json.nextPageToken || '';
+  } while(pageToken);
+  events = events.filter(ev=>ev.status!=='cancelled' && ev.start);
+  const eventIds = new Set(events.map(e=>e.id));
+  const winStartStr = todayStr(winStart), winEndStr = todayStr(winEnd);
+  const toDelete = STATE.appointments.filter(a=> a.googleEventId && !eventIds.has(a.googleEventId) && a.data>=winStartStr && a.data<=winEndStr);
+  for(const a of toDelete){ await db.collection('appointments').doc(a.id).delete(); }
+  for(const ev of events){
+    const dt = ev.start.dateTime || (ev.start.date+'T00:00:00');
+    const d = new Date(dt);
+    const dataStr = todayStr(d);
+    const horaStr = ev.start.dateTime? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : '';
+    const existing = STATE.appointments.find(a=>a.googleEventId===ev.id);
+    if(existing){
+      const patch = {};
+      if(existing.data!==dataStr) patch.data = dataStr;
+      if(existing.hora!==horaStr) patch.hora = horaStr;
+      if((existing.obs||'')!==(ev.description||'')) patch.obs = ev.description||'';
+      if(!existing.clienteId && existing.clienteNome!==(ev.summary||'')) patch.clienteNome = ev.summary||'';
+      if(Object.keys(patch).length) await db.collection('appointments').doc(existing.id).update(patch);
+    } else {
+      await db.collection('appointments').add({
+        clienteId:'', clienteNome: ev.summary||'Evento da Google Agenda', servicoId:'', servicoDescricao:'',
+        data:dataStr, hora:horaStr, status:'Agendado', obs: ev.description||'', googleEventId: ev.id, origem:'google'
+      });
     }
-  }catch(e){ console.error('Falha ao puxar da Google Agenda', e); }
+  }
 }
 async function initCalendarSync(){
   if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope) return;
   SYNC_CONFIG.calendarId = 'primary';
-  await syncGoogleCalendarPull();
+  try{ await syncGoogleCalendarPull(); }catch(e){ console.error('Falha ao puxar da Google Agenda', e); }
   updateCalendarBanner();
-  if(!calendarPollStarted){ calendarPollStarted = true; setInterval(syncGoogleCalendarPull, 30000); }
+  if(!calendarPollStarted){
+    calendarPollStarted = true;
+    setInterval(()=>{ syncGoogleCalendarPull().catch(e=>console.error('Falha ao puxar da Google Agenda (automático)', e)); }, 25000);
+  }
 }
 
 function updateReconnectBanner(){
@@ -1471,12 +1472,9 @@ function renderAgenda(){
   return `
   <div class="page-head">
     <div><h1>▤ Agenda</h1><p>Agendamentos de serviço, com mensagens prontas para o cliente.</p></div>
-    <div style="display:flex;gap:8px;">
-      ${SYNC_CONFIG.calendarScope? `<button class="btn ghost small" data-action="sync-calendar-now">🔄 Sincronizar agora</button>`:''}
-      <button class="btn primary" data-action="new-appt">+ Novo agendamento</button>
-    </div>
+    <button class="btn primary" data-action="new-appt">+ Novo agendamento</button>
   </div>
-  <div style="font-size:12px;color:var(--ink-soft);margin:-8px 0 14px;">${SYNC_CONFIG.calendarScope? '🟢 Sincronizado com a Google Agenda (nos dois sentidos) — os itens com 📅 vieram de lá.' : '⚪ Google Agenda não conectada. Ative em Configurações → Sincronização.'}</div>
+  <div style="font-size:12px;color:var(--ink-soft);margin:-8px 0 14px;">${SYNC_CONFIG.calendarScope? '🟢 Sincronizado automaticamente com a Google Agenda (nos dois sentidos) — os itens com 📅 vieram de lá. Sincronizar na hora: Configurações → Sincronização.' : '⚪ Google Agenda não conectada. Ative em Configurações → Sincronização.'}</div>
   <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
     <input type="checkbox" data-action="toggle-past" ${uiState.agendaShowPast?'checked':''}> Mostrar concluídos e cancelados
   </label>
@@ -2010,7 +2008,7 @@ function renderSyncConfig(){
       ${connected? `<button type="button" class="btn ghost" data-action="gd-disconnect">Desconectar</button>`:''}
     </div>
     <div class="sub" style="margin-top:8px;">${connected? '🟢 Conectado — sincronizando com seu Google Drive.' : '⚪ Não conectado — os dados ficam salvos só neste aparelho.'}</div>
-    ${connected? `<div class="sub" style="margin-top:4px;">${SYNC_CONFIG.calendarScope? '🟢 Google Agenda sincronizada (nos dois sentidos, com sua agenda principal).' : '⚪ Google Agenda não conectada.'} ${!SYNC_CONFIG.calendarScope? `<button type="button" class="btn small" data-action="enable-calendar-sync" style="margin-left:6px;">Ativar</button>`:''}</div>` : ''}
+    ${connected? `<div class="sub" style="margin-top:4px;">${SYNC_CONFIG.calendarScope? '🟢 Google Agenda sincronizada (nos dois sentidos, com sua agenda principal — automático, a cada 25s).' : '⚪ Google Agenda não conectada.'} ${!SYNC_CONFIG.calendarScope? `<button type="button" class="btn small" data-action="enable-calendar-sync" style="margin-left:6px;">Ativar</button>` : `<button type="button" class="btn small ghost" data-action="sync-calendar-now" style="margin-left:6px;">🔄 Sincronizar agora</button>`}</div>` : ''}
     ${connected? importBtn : ''}
     ${connected? fileImportBtn : ''}
   </div>`;
@@ -2374,8 +2372,13 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='sync-calendar-now'){
     toast('Sincronizando com a Google Agenda...');
-    await syncGoogleCalendarPull();
-    toast('Google Agenda sincronizada!');
+    try{
+      await syncGoogleCalendarPull();
+      toast('Google Agenda sincronizada!');
+    }catch(e){
+      console.error(e);
+      toast('Não foi possível sincronizar: '+String(e.message||e).slice(0,140));
+    }
     render(); return;
   }
   if(action==='import-local-data'){
