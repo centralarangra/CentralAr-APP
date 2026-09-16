@@ -208,6 +208,10 @@ tr:hover td{background:var(--paper);}
 .week-event{position:absolute;z-index:2;left:3px;right:3px;border-radius:7px;color:#fff;font-size:11px;padding:4px 6px;overflow:hidden;cursor:pointer;box-shadow:var(--shadow);line-height:1.25;}
 .week-event b{display:block;font-size:11.5px;}
 .week-event-time{opacity:.85;font-size:10px;margin-top:2px;}
+.color-picker{display:flex;gap:10px;align-items:center;}
+.color-swatch{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;}
+.color-swatch.selected{border-color:var(--ink);box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ink);}
+.color-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle;}
 @media (max-width:880px){
   .week-grid{grid-template-columns:44px repeat(7,110px);}
 }
@@ -436,7 +440,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.17.2';
+const APP_VERSION = 'v1.18.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1478,7 +1482,8 @@ function renderSaleEditor(){
 /* ============================================================
    AGENDA
 ============================================================ */
-function newApptDraft(a){ return a || {clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:todayStr(), hora:'09:00', status:'Agendado', obs:''}; }
+const APPT_COLORS = ['#1B4A82','#1E8E5A','#C97A1E','#6B4FA0'];
+function newApptDraft(a){ return a || {clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:todayStr(), hora:'09:00', status:'Agendado', obs:'', cor:APPT_COLORS[0]}; }
 function apptMsgConfirmacao(a){
   return `Olá, ${a.clienteNome||clientName(a.clienteId)||'tudo bem'}! Seu serviço de ${a.servicoDescricao||'manutenção'} está confirmado para o dia ${formatDateBR(a.data)} às ${a.hora}. Qualquer dúvida estamos à disposição.\n— ${EMPRESA.nome} ${EMPRESA.slogan}`;
 }
@@ -1512,7 +1517,7 @@ function renderAgendaList(){
   if(!uiState.agendaShowPast) list = list.filter(a=>a.data>=today || (a.status!=='Concluído' && a.status!=='Cancelado'));
   const rows = list.map(a=>`<tr>
     <td data-label="Data/Hora"><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}</span></td>
-    <td data-label="Cliente">${escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</td>
+    <td data-label="Cliente"><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</td>
     <td data-label="Serviço">${escapeHtml(a.servicoDescricao||'—')}</td>
     <td data-label="Status">
       <select data-action="appt-status" data-id="${a.id}" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:16px;">
@@ -1546,7 +1551,6 @@ function renderAgendaWeek(){
   const startHour=6, endHour=21, pxPerHour=56;
   const hours = []; for(let h=startHour; h<endHour; h++) hours.push(h);
   const today = todayStr();
-  const statusColor = {'Agendado':'#1B4A82','Confirmado':'#1E8E5A','Concluído':'#6B7787','Cancelado':'#B3413A'};
   let list = STATE.appointments.filter(a=> days.includes(a.data));
   if(!uiState.agendaShowPast) list = list.filter(a=> a.status!=='Concluído' && a.status!=='Cancelado');
 
@@ -1563,8 +1567,9 @@ function renderAgendaWeek(){
       const top = Math.max(0, ((h+(m||0)/60) - startHour) * pxPerHour);
       const cliente = escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso');
       const servico = a.servicoDescricao? escapeHtml(a.servicoDescricao) : '';
-      const color = statusColor[a.status]||statusColor.Agendado;
-      return `<div class="week-event" style="top:${top}px;height:${pxPerHour-4}px;background:${color};" data-action="edit-appt" data-id="${a.id}" title="${cliente}${servico?' — '+servico:''}">
+      const color = a.cor || APPT_COLORS[0];
+      const cancelado = a.status==='Cancelado';
+      return `<div class="week-event" style="top:${top}px;height:${pxPerHour-4}px;background:${color};${cancelado?'opacity:.5;text-decoration:line-through;':''}" data-action="edit-appt" data-id="${a.id}" title="${cliente}${servico?' — '+servico:''}">
         <b>${cliente}</b>${servico?`<br>${servico}`:''}<div class="week-event-time">${a.hora||''}</div>
       </div>`;
     }).join('');
@@ -1611,6 +1616,12 @@ function apptModalHtml(a){
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-appt" name="data" type="date" required value="${a.data}">${dateIconBtn('date-appt')}</div></div>
       <div class="field"><label>Hora</label><input name="hora" type="time" required value="${a.hora}"></div>
       <div class="field span2"><label>Status</label><select name="status">${['Agendado','Confirmado','Concluído','Cancelado'].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="field span2"><label>Cor na agenda</label>
+        <div class="color-picker">
+          ${APPT_COLORS.map(c=>`<button type="button" class="color-swatch ${(a.cor||APPT_COLORS[0])===c?'selected':''}" data-action="pick-appt-color" data-color="${c}" style="background:${c};"></button>`).join('')}
+          <input type="hidden" name="cor" value="${a.cor||APPT_COLORS[0]}">
+        </div>
+      </div>
       <div class="field span2"><label>Observações</label><textarea name="obs">${escapeHtml(a.obs)}</textarea></div>
     </div>
     <div class="modal-actions" style="${isEdit?'justify-content:space-between;':''}">
@@ -1631,7 +1642,8 @@ async function handleApptForm(form){
   const data = {
     clienteId: fd.get('clienteId')||'', clienteNome: fd.get('clienteNome')||'',
     servicoId: servicoId||'', servicoDescricao: servico? servico.nome : (fd.get('servicoDescricao')||''),
-    data: fd.get('data'), hora: fd.get('hora'), status: fd.get('status'), obs: fd.get('obs')||''
+    data: fd.get('data'), hora: fd.get('hora'), status: fd.get('status'), obs: fd.get('obs')||'',
+    cor: fd.get('cor')||APPT_COLORS[0]
   };
   let savedId = id;
   if(id) await db.collection('appointments').doc(id).update(data);
@@ -2588,6 +2600,13 @@ document.addEventListener('click', async (e)=>{
   if(action==='agenda-week-prev'){ const d=new Date(uiState.agendaWeekStart+'T00:00:00'); d.setDate(d.getDate()-7); uiState.agendaWeekStart=todayStr(d); render(); return; }
   if(action==='agenda-week-next'){ const d=new Date(uiState.agendaWeekStart+'T00:00:00'); d.setDate(d.getDate()+7); uiState.agendaWeekStart=todayStr(d); render(); return; }
   if(action==='agenda-week-today'){ uiState.agendaWeekStart = startOfWeekStr(todayStr()); render(); return; }
+  if(action==='pick-appt-color'){
+    const wrap = btn.closest('.color-picker');
+    wrap.querySelector('input[type="hidden"]').value = btn.dataset.color;
+    wrap.querySelectorAll('.color-swatch').forEach(s=>s.classList.remove('selected'));
+    btn.classList.add('selected');
+    return;
+  }
   if(action==='new-appt-slot'){
     const draft = {clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:btn.dataset.date, hora:btn.dataset.hour, status:'Agendado', obs:''};
     openModal(apptModalHtml(draft));
