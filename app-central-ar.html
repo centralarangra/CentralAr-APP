@@ -346,6 +346,10 @@ tr:hover td{background:var(--paper);}
     <span>🔄 Nova versão do app disponível</span>
     <button type="button" data-action="reload-app">Atualizar agora</button>
   </div>
+  <div class="floating-card" id="calendar-banner" style="display:none;">
+    <span>📅 Ative a sincronização com a Google Agenda</span>
+    <button type="button" data-action="enable-calendar-sync">Ativar</button>
+  </div>
 </div>
 <div class="mobile-topbar">
   <button class="hamburger-btn" data-action="open-drawer" aria-label="Abrir menu">
@@ -409,7 +413,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.15.0';
+const APP_VERSION = 'v1.16.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -626,13 +630,15 @@ function subscribeAll(){
 }
 
 /* ---------- Google Drive sync (opcional, usado quando não é aberto como Artifact) ---------- */
-const SYNC_CONFIG = {clientId:'', fileId:'', connected:false, accessToken:'', expiresAt:0};
+const SYNC_CONFIG = {clientId:'', fileId:'', connected:false, accessToken:'', expiresAt:0, calendarId:'', calendarScope:false};
 try{
   const savedGd = JSON.parse(localStorage.getItem('centralar_gd_config')||'{}');
   SYNC_CONFIG.clientId = savedGd.clientId || '';
   SYNC_CONFIG.fileId = savedGd.fileId || '';
   SYNC_CONFIG.accessToken = savedGd.accessToken || '';
   SYNC_CONFIG.expiresAt = savedGd.expiresAt || 0;
+  SYNC_CONFIG.calendarId = savedGd.calendarId || '';
+  SYNC_CONFIG.calendarScope = !!savedGd.calendarScope;
 }catch(e){}
 let gdAccessToken = null;
 const DRIVE_FILE_NAME = 'centralar-dados.json';
@@ -662,7 +668,7 @@ function gdRequestToken(interactive){
     try{
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: SYNC_CONFIG.clientId,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar',
         callback: (resp)=>{ resp && resp.access_token ? resolve(resp) : resolve(null); },
         error_callback: ()=> resolve(null)
       });
@@ -680,7 +686,7 @@ function defaultDriveData(){
   const d = {}; COLLECTIONS.forEach(c=> d[c]=[]); d.meta = []; return d;
 }
 function persistGdConfig(){
-  try{ localStorage.setItem('centralar_gd_config', JSON.stringify({clientId:SYNC_CONFIG.clientId, fileId:SYNC_CONFIG.fileId||'', accessToken:SYNC_CONFIG.accessToken||'', expiresAt:SYNC_CONFIG.expiresAt||0})); }catch(e){}
+  try{ localStorage.setItem('centralar_gd_config', JSON.stringify({clientId:SYNC_CONFIG.clientId, fileId:SYNC_CONFIG.fileId||'', accessToken:SYNC_CONFIG.accessToken||'', expiresAt:SYNC_CONFIG.expiresAt||0, calendarId:SYNC_CONFIG.calendarId||'', calendarScope:!!SYNC_CONFIG.calendarScope})); }catch(e){}
 }
 async function gdFindOrCreateFile(){
   if(SYNC_CONFIG.fileId){
@@ -773,6 +779,7 @@ async function connectGoogleDrive(clientId, interactive){
   gdAccessToken = resp.access_token;
   SYNC_CONFIG.accessToken = resp.access_token;
   SYNC_CONFIG.expiresAt = Date.now() + ((resp.expires_in||3300)*1000);
+  SYNC_CONFIG.calendarScope = !!(resp.scope && resp.scope.includes('calendar'));
   try{
     await gdFindOrCreateFile();
     const gdb = createGoogleDriveDb();
@@ -783,6 +790,7 @@ async function connectGoogleDrive(clientId, interactive){
     usingLocalFallback = false;
     SYNC_CONFIG.connected = true;
     persistGdConfig();
+    if(SYNC_CONFIG.calendarScope) initCalendarSync();
     return true;
   }catch(e){ console.error(e); return false; }
 }
@@ -799,6 +807,7 @@ async function tryResumeWithCachedToken(){
     db = gdb;
     usingLocalFallback = false;
     SYNC_CONFIG.connected = true;
+    if(SYNC_CONFIG.calendarScope) initCalendarSync();
     return true;
   }catch(e){ return false; }
 }
@@ -809,13 +818,104 @@ async function silentTokenRefresh(){
     gdAccessToken = resp.access_token;
     SYNC_CONFIG.accessToken = resp.access_token;
     SYNC_CONFIG.expiresAt = Date.now() + ((resp.expires_in||3300)*1000);
+    SYNC_CONFIG.calendarScope = !!(resp.scope && resp.scope.includes('calendar'));
     persistGdConfig();
+    if(SYNC_CONFIG.calendarScope) initCalendarSync();
+    updateCalendarBanner();
   }
+}
+
+/* ---------- Google Agenda (Calendar), sincronização bidirecional com os agendamentos ---------- */
+let calendarPollStarted = false;
+function apptEventBody(a){
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
+  const start = new Date(`${a.data}T${(a.hora||'09:00')}:00`);
+  const end = new Date(start.getTime() + 60*60*1000);
+  const cliente = a.clienteNome || clientName(a.clienteId) || 'Cliente avulso';
+  return {
+    summary: `${cliente}${a.servicoDescricao? ' — '+a.servicoDescricao : ''}`,
+    description: a.obs||'',
+    start: {dateTime: start.toISOString(), timeZone: tz},
+    end: {dateTime: end.toISOString(), timeZone: tz}
+  };
+}
+async function pushApptToCalendar(a){
+  if(!a || !SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope || !SYNC_CONFIG.calendarId) return;
+  try{
+    if(a.status==='Cancelado'){
+      if(a.googleEventId){ await deleteApptFromCalendar(a.googleEventId); await db.collection('appointments').doc(a.id).update({googleEventId:''}); }
+      return;
+    }
+    const body = JSON.stringify(apptEventBody(a));
+    if(a.googleEventId){
+      await gdFetch(`https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events/${a.googleEventId}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body});
+    } else {
+      const res = await gdFetch(`https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events`, {method:'POST', headers:{'Content-Type':'application/json'}, body});
+      const json = await res.json();
+      await db.collection('appointments').doc(a.id).update({googleEventId: json.id});
+    }
+  }catch(e){ console.error('Falha ao sincronizar com a Google Agenda', e); }
+}
+async function deleteApptFromCalendar(googleEventId){
+  if(!googleEventId || !SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope || !SYNC_CONFIG.calendarId) return;
+  try{ await gdFetch(`https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events/${googleEventId}`, {method:'DELETE'}); }catch(e){ /* já pode ter sido removido do outro lado */ }
+}
+async function syncGoogleCalendarPull(){
+  if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope || !SYNC_CONFIG.calendarId || !db) return;
+  try{
+    const winStart = new Date(Date.now() - 30*86400000);
+    const winEnd = new Date(Date.now() + 180*86400000);
+    const timeMin = winStart.toISOString(), timeMax = winEnd.toISOString();
+    let events = [], pageToken = '';
+    do{
+      const url = `https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=2500${pageToken?`&pageToken=${pageToken}`:''}`;
+      const res = await gdFetch(url);
+      const json = await res.json();
+      events = events.concat(json.items||[]);
+      pageToken = json.nextPageToken || '';
+    } while(pageToken);
+    events = events.filter(ev=>ev.status!=='cancelled' && ev.start);
+    const eventIds = new Set(events.map(e=>e.id));
+    const winStartStr = todayStr(winStart), winEndStr = todayStr(winEnd);
+    const toDelete = STATE.appointments.filter(a=> a.googleEventId && !eventIds.has(a.googleEventId) && a.data>=winStartStr && a.data<=winEndStr);
+    for(const a of toDelete){ await db.collection('appointments').doc(a.id).delete(); }
+    for(const ev of events){
+      const dt = ev.start.dateTime || (ev.start.date+'T00:00:00');
+      const d = new Date(dt);
+      const dataStr = todayStr(d);
+      const horaStr = ev.start.dateTime? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : '';
+      const existing = STATE.appointments.find(a=>a.googleEventId===ev.id);
+      if(existing){
+        const patch = {};
+        if(existing.data!==dataStr) patch.data = dataStr;
+        if(existing.hora!==horaStr) patch.hora = horaStr;
+        if((existing.obs||'')!==(ev.description||'')) patch.obs = ev.description||'';
+        if(!existing.clienteId && existing.clienteNome!==(ev.summary||'')) patch.clienteNome = ev.summary||'';
+        if(Object.keys(patch).length) await db.collection('appointments').doc(existing.id).update(patch);
+      } else {
+        await db.collection('appointments').add({
+          clienteId:'', clienteNome: ev.summary||'Evento da Google Agenda', servicoId:'', servicoDescricao:'',
+          data:dataStr, hora:horaStr, status:'Agendado', obs: ev.description||'', googleEventId: ev.id, origem:'google'
+        });
+      }
+    }
+  }catch(e){ console.error('Falha ao puxar da Google Agenda', e); }
+}
+async function initCalendarSync(){
+  if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope) return;
+  SYNC_CONFIG.calendarId = 'primary';
+  await syncGoogleCalendarPull();
+  updateCalendarBanner();
+  if(!calendarPollStarted){ calendarPollStarted = true; setInterval(syncGoogleCalendarPull, 30000); }
 }
 
 function updateReconnectBanner(){
   const el = document.getElementById('reconnect-banner');
   if(el) el.style.display = (SYNC_CONFIG.clientId && !SYNC_CONFIG.connected) ? 'flex' : 'none';
+}
+function updateCalendarBanner(){
+  const el = document.getElementById('calendar-banner');
+  if(el) el.style.display = (SYNC_CONFIG.connected && SYNC_CONFIG.clientId && !SYNC_CONFIG.calendarScope) ? 'flex' : 'none';
 }
 async function initDb(){
   let real = null;
@@ -838,6 +938,7 @@ async function initDb(){
     }
   }
   updateReconnectBanner();
+  updateCalendarBanner();
   subscribeAll();
   await ensureSeed();
 }
@@ -1353,7 +1454,7 @@ function renderAgenda(){
   if(!uiState.agendaShowPast) list = list.filter(a=>a.data>=today || (a.status!=='Concluído' && a.status!=='Cancelado'));
   const rows = list.map(a=>`<tr>
     <td data-label="Data/Hora"><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}</span></td>
-    <td data-label="Cliente">${escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso')}</td>
+    <td data-label="Cliente">${escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</td>
     <td data-label="Serviço">${escapeHtml(a.servicoDescricao||'—')}</td>
     <td data-label="Status">
       <select data-action="appt-status" data-id="${a.id}" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:16px;">
@@ -1370,8 +1471,12 @@ function renderAgenda(){
   return `
   <div class="page-head">
     <div><h1>▤ Agenda</h1><p>Agendamentos de serviço, com mensagens prontas para o cliente.</p></div>
-    <button class="btn primary" data-action="new-appt">+ Novo agendamento</button>
+    <div style="display:flex;gap:8px;">
+      ${SYNC_CONFIG.calendarScope? `<button class="btn ghost small" data-action="sync-calendar-now">🔄 Sincronizar agora</button>`:''}
+      <button class="btn primary" data-action="new-appt">+ Novo agendamento</button>
+    </div>
   </div>
+  <div style="font-size:12px;color:var(--ink-soft);margin:-8px 0 14px;">${SYNC_CONFIG.calendarScope? '🟢 Sincronizado com a Google Agenda (nos dois sentidos) — os itens com 📅 vieram de lá.' : '⚪ Google Agenda não conectada. Ative em Configurações → Sincronização.'}</div>
   <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
     <input type="checkbox" data-action="toggle-past" ${uiState.agendaShowPast?'checked':''}> Mostrar concluídos e cancelados
   </label>
@@ -1421,9 +1526,12 @@ async function handleApptForm(form){
     servicoId: servicoId||'', servicoDescricao: servico? servico.nome : (fd.get('servicoDescricao')||''),
     data: fd.get('data'), hora: fd.get('hora'), status: fd.get('status'), obs: fd.get('obs')||''
   };
+  let savedId = id;
   if(id) await db.collection('appointments').doc(id).update(data);
-  else await db.collection('appointments').add(data);
+  else { const ref = await db.collection('appointments').add(data); savedId = ref.id; }
   closeModal();
+  const saved = STATE.appointments.find(x=>x.id===savedId);
+  pushApptToCalendar(saved || {...data, id:savedId});
 }
 
 /* ============================================================
@@ -1902,6 +2010,7 @@ function renderSyncConfig(){
       ${connected? `<button type="button" class="btn ghost" data-action="gd-disconnect">Desconectar</button>`:''}
     </div>
     <div class="sub" style="margin-top:8px;">${connected? '🟢 Conectado — sincronizando com seu Google Drive.' : '⚪ Não conectado — os dados ficam salvos só neste aparelho.'}</div>
+    ${connected? `<div class="sub" style="margin-top:4px;">${SYNC_CONFIG.calendarScope? '🟢 Google Agenda sincronizada (nos dois sentidos, com sua agenda principal).' : '⚪ Google Agenda não conectada.'} ${!SYNC_CONFIG.calendarScope? `<button type="button" class="btn small" data-action="enable-calendar-sync" style="margin-left:6px;">Ativar</button>`:''}</div>` : ''}
     ${connected? importBtn : ''}
     ${connected? fileImportBtn : ''}
   </div>`;
@@ -2246,11 +2355,27 @@ document.addEventListener('click', async (e)=>{
       await ensureSeed();
       document.getElementById('sync-dot').classList.remove('off');
       document.getElementById('sync-label').textContent = 'Sincronizado (Google Drive)';
-      toast('Conectado ao Google Drive!');
+      toast(SYNC_CONFIG.calendarScope? 'Conectado ao Google Drive e à Google Agenda!' : 'Conectado ao Google Drive!');
     } else {
       toast('Não foi possível conectar. Confira o Client ID.');
     }
     updateReconnectBanner();
+    updateCalendarBanner();
+    render(); return;
+  }
+  if(action==='enable-calendar-sync'){
+    toast('Conectando à Google Agenda...');
+    const ok = await connectGoogleDrive(SYNC_CONFIG.clientId, true);
+    if(ok && SYNC_CONFIG.calendarScope){ toast('Google Agenda conectada!'); }
+    else if(ok){ toast('Conectado, mas a permissão da Google Agenda não foi concedida. Tente de novo e aceite o acesso à Agenda.'); }
+    else { toast('Não foi possível conectar agora.'); }
+    updateCalendarBanner();
+    render(); return;
+  }
+  if(action==='sync-calendar-now'){
+    toast('Sincronizando com a Google Agenda...');
+    await syncGoogleCalendarPull();
+    toast('Google Agenda sincronizada!');
     render(); return;
   }
   if(action==='import-local-data'){
@@ -2268,7 +2393,7 @@ document.addEventListener('click', async (e)=>{
     return;
   }
   if(action==='gd-disconnect'){
-    SYNC_CONFIG.connected=false; SYNC_CONFIG.fileId=''; SYNC_CONFIG.clientId=''; SYNC_CONFIG.accessToken=''; SYNC_CONFIG.expiresAt=0; gdAccessToken=null;
+    SYNC_CONFIG.connected=false; SYNC_CONFIG.fileId=''; SYNC_CONFIG.clientId=''; SYNC_CONFIG.accessToken=''; SYNC_CONFIG.expiresAt=0; SYNC_CONFIG.calendarId=''; SYNC_CONFIG.calendarScope=false; gdAccessToken=null;
     try{ localStorage.removeItem('centralar_gd_config'); }catch(e){}
     db = createLocalDb(); usingLocalFallback = true;
     subscribeAll();
@@ -2276,6 +2401,7 @@ document.addEventListener('click', async (e)=>{
     document.getElementById('sync-label').textContent = 'Salvo neste aparelho';
     toast('Desconectado do Google Drive.');
     updateReconnectBanner();
+    updateCalendarBanner();
     render(); return;
   }
   if(action==='quick-reconnect'){
@@ -2293,6 +2419,7 @@ document.addEventListener('click', async (e)=>{
       toast('Não foi possível conectar agora.');
     }
     updateReconnectBanner();
+    updateCalendarBanner();
     render(); return;
   }
 
@@ -2341,7 +2468,7 @@ document.addEventListener('click', async (e)=>{
   // agenda
   if(action==='new-appt'){ openModal(apptModalHtml(null)); bindApptServicoSync(); return; }
   if(action==='edit-appt'){ const rec = STATE.appointments.find(x=>x.id===btn.dataset.id); openModal(apptModalHtml(rec)); bindApptServicoSync(); return; }
-  if(action==='delete-appt'){ confirmDialog('Excluir este agendamento?', async ()=>{ await db.collection('appointments').doc(btn.dataset.id).delete(); }); return; }
+  if(action==='delete-appt'){ confirmDialog('Excluir este agendamento?', async ()=>{ const appt = STATE.appointments.find(x=>x.id===btn.dataset.id); await db.collection('appointments').doc(btn.dataset.id).delete(); if(appt?.googleEventId) await deleteApptFromCalendar(appt.googleEventId); }); return; }
   if(action==='copy-confirm'){ const a = STATE.appointments.find(x=>x.id===btn.dataset.id); copyText(apptMsgConfirmacao(a)); return; }
   if(action==='copy-lembrete'){ const a = STATE.appointments.find(x=>x.id===btn.dataset.id); copyText(apptMsgLembrete(a)); return; }
   if(action==='toggle-past'){ uiState.agendaShowPast = !uiState.agendaShowPast; render(); return; }
@@ -2508,7 +2635,7 @@ document.addEventListener('change', async (e)=>{
     return;
   }
   if(el.dataset.action==='fin-month'){ uiState.finMonth = el.value; render(); return; }
-  if(el.dataset.action==='appt-status'){ await db.collection('appointments').doc(el.dataset.id).update({status:el.value}); return; }
+  if(el.dataset.action==='appt-status'){ const id=el.dataset.id; await db.collection('appointments').doc(id).update({status:el.value}); const appt=STATE.appointments.find(x=>x.id===id); if(appt) pushApptToCalendar(appt); return; }
   if(el.dataset.action==='budget-status'){ await db.collection('budgets').doc(el.dataset.id).update({status:el.value}); return; }
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='budget-item-valor'){ budgetDraft.itens[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
