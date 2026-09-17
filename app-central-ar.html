@@ -205,7 +205,8 @@ tr:hover td{background:var(--paper);}
 .week-hour-slot{height:56px;border-top:1px solid var(--line);cursor:pointer;box-sizing:border-box;}
 .week-hour-slot:first-child{border-top:none;}
 .week-hour-slot:hover{background:rgba(27,74,130,0.07);}
-.week-event{position:absolute;z-index:2;left:3px;right:3px;border-radius:7px;color:#fff;font-size:11px;padding:4px 6px;overflow:hidden;cursor:pointer;box-shadow:var(--shadow);line-height:1.25;}
+.week-event{position:absolute;z-index:2;left:3px;right:3px;border-radius:7px;color:#fff;font-size:11px;padding:4px 6px;overflow:hidden;cursor:grab;box-shadow:var(--shadow);line-height:1.25;touch-action:none;user-select:none;}
+.week-event.dragging{cursor:grabbing;z-index:5;opacity:.85;box-shadow:0 8px 20px rgba(0,0,0,.3);}
 .week-event b{display:block;font-size:11.5px;}
 .week-event-time{opacity:.85;font-size:10px;margin-top:2px;}
 .color-picker{display:flex;gap:10px;align-items:center;}
@@ -440,7 +441,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.19.0';
+const APP_VERSION = 'v1.20.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1590,7 +1591,7 @@ function renderAgendaWeek(){
         <b>${cliente}</b>${servico?`<br>${servico}`:''}<div class="week-event-time">${horario}</div>
       </div>`;
     }).join('');
-    return `<div class="week-day-body" style="height:${bodyHeight}px;">${slots}${evs}</div>`;
+    return `<div class="week-day-body" data-date="${d}" style="height:${bodyHeight}px;">${slots}${evs}</div>`;
   }).join('');
 
   const hourLabels = hours.map(h=>`<div class="week-hour-label">${h}:00</div>`).join('');
@@ -2460,6 +2461,79 @@ function render(){
   }
   if(uiState.tab==='relatorios' && uiState.reportSub==='checklist' && checklistDraft) setupSignaturePad();
 }
+
+/* ============================================================
+   AGENDA — arrastar agendamento na grade Semana
+============================================================ */
+let weekDrag = null;
+let suppressNextClick = false;
+document.addEventListener('click', (e)=>{
+  if(suppressNextClick){ suppressNextClick = false; e.stopPropagation(); e.preventDefault(); }
+}, true);
+document.addEventListener('pointerdown', (e)=>{
+  const el = e.target.closest('.week-event');
+  if(!el) return;
+  const id = el.dataset.id;
+  const appt = STATE.appointments.find(a=>a.id===id);
+  const dayBody = el.closest('.week-day-body');
+  if(!appt || !dayBody) return;
+  const rect = dayBody.getBoundingClientRect();
+  weekDrag = {
+    id, appt, el, dayBody,
+    pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, moved: false,
+    grabOffsetY: e.clientY - rect.top - (parseFloat(el.style.top)||0)
+  };
+});
+document.addEventListener('pointermove', (e)=>{
+  if(!weekDrag || e.pointerId!==weekDrag.pointerId) return;
+  const dx = e.clientX-weekDrag.startX, dy = e.clientY-weekDrag.startY;
+  if(!weekDrag.moved && Math.hypot(dx,dy) < 6) return;
+  if(!weekDrag.moved){
+    weekDrag.moved = true;
+    try{ weekDrag.el.setPointerCapture(e.pointerId); }catch(err){}
+    weekDrag.el.classList.add('dragging');
+  }
+  e.preventDefault();
+  let targetDay = weekDrag.dayBody;
+  document.querySelectorAll('.week-day-body').forEach(db=>{
+    const r = db.getBoundingClientRect();
+    if(e.clientX>=r.left && e.clientX<r.right) targetDay = db;
+  });
+  weekDrag.targetDay = targetDay;
+  const dayRect = targetDay.getBoundingClientRect();
+  let newTop = e.clientY - dayRect.top - weekDrag.grabOffsetY;
+  newTop = Math.max(0, Math.min(newTop, dayRect.height - weekDrag.el.offsetHeight));
+  const snap = 14; // 15 minutos a 56px/hora
+  newTop = Math.round(newTop/snap)*snap;
+  if(targetDay !== weekDrag.el.parentElement) targetDay.appendChild(weekDrag.el);
+  weekDrag.el.style.top = newTop+'px';
+  weekDrag.newTop = newTop;
+});
+document.addEventListener('pointerup', async (e)=>{
+  if(!weekDrag || e.pointerId!==weekDrag.pointerId) return;
+  const wd = weekDrag; weekDrag = null;
+  wd.el.classList.remove('dragging');
+  if(!wd.moved) return;
+  suppressNextClick = true;
+  const startHour = 6, pxPerHour = 56;
+  const totalMin = Math.round((wd.newTop/pxPerHour)*60);
+  const newHora = `${pad2(startHour + Math.floor(totalMin/60))}:${pad2(totalMin%60)}`;
+  const newData = (wd.targetDay||wd.dayBody).dataset.date;
+  const patch = {data:newData, hora:newHora};
+  if(wd.appt.horaFim){
+    const [oh,om] = wd.appt.hora.split(':').map(Number);
+    const [eh,em] = wd.appt.horaFim.split(':').map(Number);
+    const durMin = (eh*60+em)-(oh*60+om);
+    if(durMin>0){
+      const endTotal = totalMin+durMin;
+      patch.horaFim = `${pad2(startHour+Math.floor(endTotal/60))}:${pad2(endTotal%60)}`;
+    }
+  }
+  await db.collection('appointments').doc(wd.id).update(patch);
+  const updated = STATE.appointments.find(a=>a.id===wd.id);
+  if(updated) pushApptToCalendar(updated);
+  render();
+});
 
 /* ============================================================
    AÇÕES (delegação de eventos)
