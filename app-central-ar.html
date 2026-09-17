@@ -440,7 +440,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.18.0';
+const APP_VERSION = 'v1.19.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:false, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -870,11 +870,12 @@ function addOneHourToDataHora(data, hora){
 function apptEventBody(a){
   const cliente = a.clienteNome || clientName(a.clienteId) || 'Cliente avulso';
   const hora = a.hora || '09:00';
+  const endStr = (a.horaFim && a.horaFim > hora) ? `${a.data}T${a.horaFim}:00` : addOneHourToDataHora(a.data, hora);
   return {
     summary: `${cliente}${a.servicoDescricao? ' — '+a.servicoDescricao : ''}`,
     description: a.obs||'',
     start: {dateTime: `${a.data}T${hora}:00`, timeZone: BUSINESS_TZ},
-    end: {dateTime: addOneHourToDataHora(a.data, hora), timeZone: BUSINESS_TZ}
+    end: {dateTime: endStr, timeZone: BUSINESS_TZ}
   };
 }
 async function pushApptToCalendar(a){
@@ -917,10 +918,11 @@ async function syncGoogleCalendarPull(){
   const toDelete = STATE.appointments.filter(a=> a.googleEventId && !eventIds.has(a.googleEventId) && a.data>=winStartStr && a.data<=winEndStr);
   for(const a of toDelete){ await db.collection('appointments').doc(a.id).delete(); }
   for(const ev of events){
-    let dataStr, horaStr;
+    let dataStr, horaStr, horaFimStr = '';
     if(ev.start.dateTime){
       const conv = saoPauloDateTimeParts(new Date(ev.start.dateTime));
       dataStr = conv.dataStr; horaStr = conv.horaStr;
+      if(ev.end && ev.end.dateTime) horaFimStr = saoPauloDateTimeParts(new Date(ev.end.dateTime)).horaStr;
     } else {
       dataStr = ev.start.date; horaStr = '';
     }
@@ -929,13 +931,14 @@ async function syncGoogleCalendarPull(){
       const patch = {};
       if(existing.data!==dataStr) patch.data = dataStr;
       if(existing.hora!==horaStr) patch.hora = horaStr;
+      if((existing.horaFim||'')!==horaFimStr) patch.horaFim = horaFimStr;
       if((existing.obs||'')!==(ev.description||'')) patch.obs = ev.description||'';
       if(!existing.clienteId && existing.clienteNome!==(ev.summary||'')) patch.clienteNome = ev.summary||'';
       if(Object.keys(patch).length) await db.collection('appointments').doc(existing.id).update(patch);
     } else {
       await db.collection('appointments').add({
         clienteId:'', clienteNome: ev.summary||'Evento da Google Agenda', servicoId:'', servicoDescricao:'',
-        data:dataStr, hora:horaStr, status:'Agendado', obs: ev.description||'', googleEventId: ev.id, origem:'google'
+        data:dataStr, hora:horaStr, horaFim:horaFimStr, status:'Agendado', obs: ev.description||'', googleEventId: ev.id, origem:'google'
       });
     }
   }
@@ -1483,7 +1486,12 @@ function renderSaleEditor(){
    AGENDA
 ============================================================ */
 const APPT_COLORS = ['#1B4A82','#1E8E5A','#C97A1E','#6B4FA0'];
-function newApptDraft(a){ return a || {clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:todayStr(), hora:'09:00', status:'Agendado', obs:'', cor:APPT_COLORS[0]}; }
+function newApptDraft(a){ return a || {clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:todayStr(), hora:'09:00', horaFim:'10:00', status:'Agendado', obs:'', cor:APPT_COLORS[0]}; }
+function bumpHora(hora, hoursToAdd){
+  let [h,m] = hora.split(':').map(Number);
+  h = (h+hoursToAdd) % 24;
+  return `${pad2(h)}:${pad2(m)}`;
+}
 function apptMsgConfirmacao(a){
   return `Olá, ${a.clienteNome||clientName(a.clienteId)||'tudo bem'}! Seu serviço de ${a.servicoDescricao||'manutenção'} está confirmado para o dia ${formatDateBR(a.data)} às ${a.hora}. Qualquer dúvida estamos à disposição.\n— ${EMPRESA.nome} ${EMPRESA.slogan}`;
 }
@@ -1516,7 +1524,7 @@ function renderAgendaList(){
   let list = STATE.appointments.slice().sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
   if(!uiState.agendaShowPast) list = list.filter(a=>a.data>=today || (a.status!=='Concluído' && a.status!=='Cancelado'));
   const rows = list.map(a=>`<tr>
-    <td data-label="Data/Hora"><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}</span></td>
+    <td data-label="Data/Hora"><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}${a.horaFim?' – '+a.horaFim:''}</span></td>
     <td data-label="Cliente"><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</td>
     <td data-label="Serviço">${escapeHtml(a.servicoDescricao||'—')}</td>
     <td data-label="Status">
@@ -1564,13 +1572,22 @@ function renderAgendaWeek(){
     const slots = hours.map(h=>`<div class="week-hour-slot" data-action="new-appt-slot" data-date="${d}" data-hour="${pad2(h)}:00"></div>`).join('');
     const evs = list.filter(a=>a.data===d).map(a=>{
       const [h,m] = (a.hora||`${startHour}:00`).split(':').map(Number);
-      const top = Math.max(0, ((h+(m||0)/60) - startHour) * pxPerHour);
+      const startFrac = h + (m||0)/60;
+      const top = Math.max(0, (startFrac - startHour) * pxPerHour);
+      let durHours = 1;
+      if(a.horaFim){
+        const [h2,m2] = a.horaFim.split(':').map(Number);
+        const endFrac = h2 + (m2||0)/60;
+        if(endFrac > startFrac) durHours = endFrac - startFrac;
+      }
+      const height = Math.max(24, durHours*pxPerHour - 4);
       const cliente = escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso');
       const servico = a.servicoDescricao? escapeHtml(a.servicoDescricao) : '';
       const color = a.cor || APPT_COLORS[0];
       const cancelado = a.status==='Cancelado';
-      return `<div class="week-event" style="top:${top}px;height:${pxPerHour-4}px;background:${color};${cancelado?'opacity:.5;text-decoration:line-through;':''}" data-action="edit-appt" data-id="${a.id}" title="${cliente}${servico?' — '+servico:''}">
-        <b>${cliente}</b>${servico?`<br>${servico}`:''}<div class="week-event-time">${a.hora||''}</div>
+      const horario = `${a.hora||''}${a.horaFim?' – '+a.horaFim:''}`;
+      return `<div class="week-event" style="top:${top}px;height:${height}px;background:${color};${cancelado?'opacity:.5;text-decoration:line-through;':''}" data-action="edit-appt" data-id="${a.id}" title="${cliente}${servico?' — '+servico:''}">
+        <b>${cliente}</b>${servico?`<br>${servico}`:''}<div class="week-event-time">${horario}</div>
       </div>`;
     }).join('');
     return `<div class="week-day-body" style="height:${bodyHeight}px;">${slots}${evs}</div>`;
@@ -1613,8 +1630,9 @@ function apptModalHtml(a){
         </select>
       </div>
       <div class="field span2"><label>Descrição do serviço</label><input name="servicoDescricao" id="appt-servico-desc" value="${escapeHtml(a.servicoDescricao)}" placeholder="Ex: Limpeza completa"></div>
-      <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-appt" name="data" type="date" required value="${a.data}">${dateIconBtn('date-appt')}</div></div>
-      <div class="field"><label>Hora</label><input name="hora" type="time" required value="${a.hora}"></div>
+      <div class="field span2"><label>Data</label><div class="date-input-wrap"><input id="date-appt" name="data" type="date" required value="${a.data}">${dateIconBtn('date-appt')}</div></div>
+      <div class="field"><label>Hora início</label><input name="hora" type="time" required value="${a.hora}"></div>
+      <div class="field"><label>Hora fim</label><input name="horaFim" type="time" value="${a.horaFim||''}"></div>
       <div class="field span2"><label>Status</label><select name="status">${['Agendado','Confirmado','Concluído','Cancelado'].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></div>
       <div class="field span2"><label>Cor na agenda</label>
         <div class="color-picker">
@@ -1642,7 +1660,7 @@ async function handleApptForm(form){
   const data = {
     clienteId: fd.get('clienteId')||'', clienteNome: fd.get('clienteNome')||'',
     servicoId: servicoId||'', servicoDescricao: servico? servico.nome : (fd.get('servicoDescricao')||''),
-    data: fd.get('data'), hora: fd.get('hora'), status: fd.get('status'), obs: fd.get('obs')||'',
+    data: fd.get('data'), hora: fd.get('hora'), horaFim: fd.get('horaFim')||'', status: fd.get('status'), obs: fd.get('obs')||'',
     cor: fd.get('cor')||APPT_COLORS[0]
   };
   let savedId = id;
@@ -2608,7 +2626,7 @@ document.addEventListener('click', async (e)=>{
     return;
   }
   if(action==='new-appt-slot'){
-    const draft = {clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:btn.dataset.date, hora:btn.dataset.hour, status:'Agendado', obs:''};
+    const draft = {clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:btn.dataset.date, hora:btn.dataset.hour, horaFim:bumpHora(btn.dataset.hour,1), status:'Agendado', obs:''};
     openModal(apptModalHtml(draft));
     bindApptServicoSync();
     return;
