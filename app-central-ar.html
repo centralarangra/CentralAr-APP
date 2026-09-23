@@ -356,6 +356,7 @@ tr:hover td{background:var(--paper);}
   @page{margin:0;}
   html,body{margin:0 !important;padding:0 !important;}
   body *{visibility:hidden;}
+  .app,.mobile-topbar,.drawer-backdrop,.overlay,.toast,.floating-notices{display:none !important;}
   #print-root, #print-root *{visibility:visible;}
   #print-root, #print-root.show{display:block !important;position:absolute !important;inset:auto !important;top:0 !important;left:0 !important;width:100% !important;height:auto !important;overflow:visible !important;background:#fff !important;margin:0 !important;padding:0 !important;}
   .doc-sheet{width:210mm !important;max-width:210mm !important;margin:0 !important;}
@@ -441,7 +442,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.22.0';
+const APP_VERSION = 'v1.22.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2192,12 +2193,16 @@ function docSheetHeightMM(){
   sheet.style.width = '793.7008px'; sheet.style.maxWidth = '793.7008px';
   const heightPx = sheet.getBoundingClientRect().height;
   sheet.style.width = prevWidth; sheet.style.maxWidth = prevMaxWidth;
-  return +(heightPx / 3.7795275591).toFixed(2);
+  return Math.ceil(heightPx / 3.7795275591 * 10) / 10 + 0.3;
+}
+function printPageCSS(){
+  const h = docSheetHeightMM();
+  return `@media print{ @page{ size:210mm ${h}mm; margin:0; } .doc-sheet{min-height:${h}mm !important;display:flex !important;flex-direction:column !important;break-after:avoid !important;page-break-after:avoid !important;} .doc-sheet .doc-bottom-img{margin-top:auto !important;} }`;
 }
 function applyPrintPageSize(){
   let styleEl = document.getElementById('print-page-size');
   if(!styleEl){ styleEl = document.createElement('style'); styleEl.id = 'print-page-size'; document.head.appendChild(styleEl); }
-  styleEl.textContent = `@media print{ @page{ size:210mm ${docSheetHeightMM()}mm; margin:0; } }`;
+  styleEl.textContent = printPageCSS();
 }
 let currentPrintHtml = '', currentPrintTitle = '';
 function printNow(html, title){
@@ -2220,7 +2225,7 @@ function buildStandaloneDoc(html, title){
   const styleEl = document.getElementById('app-styles');
   const styleContent = styleEl ? styleEl.innerHTML : '';
   const fontsLink = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">';
-  const pageSizeCSS = `@media print{ @page{ size:210mm ${docSheetHeightMM()}mm; margin:0; } }`;
+  const pageSizeCSS = printPageCSS();
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">`+
     `<title>${escapeHtml(title||'Documento')}</title>${fontsLink}<style>${styleContent}\nhtml,body{overflow-x:auto !important;}\nbody{background:#fff;padding:20px 0;}\n${pageSizeCSS}</style></head>`+
     `<body><div class="doc-sheet">${html}</div></body></html>`;
