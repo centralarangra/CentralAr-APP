@@ -208,6 +208,7 @@ tr:hover td{background:var(--paper);}
 .week-event{position:absolute;z-index:2;left:3px;right:3px;border-radius:7px;color:#fff;font-size:11px;padding:4px 6px;overflow:hidden;cursor:grab;box-shadow:var(--shadow);line-height:1.25;touch-action:none;user-select:none;}
 .week-event.dragging{cursor:grabbing;z-index:5;opacity:.85;box-shadow:0 8px 20px rgba(0,0,0,.3);}
 .week-event b{display:block;font-size:11.5px;}
+.week-event-desc{font-size:9.5px;font-weight:400;opacity:.9;margin-top:1px;line-height:1.2;}
 .week-event-time{opacity:.85;font-size:10px;margin-top:2px;}
 .color-picker{display:flex;gap:10px;align-items:center;}
 .color-swatch{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;}
@@ -446,7 +447,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.23.0';
+const APP_VERSION = 'v1.23.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -880,8 +881,16 @@ function addOneHourToDataHora(data, hora){
   if(h>=24){ h-=24; const dt=new Date(data+'T00:00:00'); dt.setDate(dt.getDate()+1); d = todayStr(dt); }
   return `${d}T${pad2(h)}:${pad2(m)}:00`;
 }
+// Tira do nome a descrição colada por sincronizações anteriores ("Cliente — Descrição — Descrição...")
+function stripApptServ(name, serv){
+  name = name||''; serv = (serv||'').trim();
+  if(!serv) return name;
+  const suf = ' — '+serv;
+  while(name.endsWith(suf)) name = name.slice(0, -suf.length);
+  return name;
+}
 function apptEventBody(a){
-  const cliente = a.clienteNome || clientName(a.clienteId) || 'Cliente avulso';
+  const cliente = stripApptServ(a.clienteNome, a.servicoDescricao) || clientName(a.clienteId) || 'Cliente avulso';
   const hora = a.hora || '09:00';
   const endStr = (a.horaFim && a.horaFim > hora) ? `${a.data}T${a.horaFim}:00` : addOneHourToDataHora(a.data, hora);
   return {
@@ -946,7 +955,10 @@ async function syncGoogleCalendarPull(){
       if(existing.hora!==horaStr) patch.hora = horaStr;
       if((existing.horaFim||'')!==horaFimStr) patch.horaFim = horaFimStr;
       if((existing.obs||'')!==(ev.description||'')) patch.obs = ev.description||'';
-      if(!existing.clienteId && existing.clienteNome!==(ev.summary||'')) patch.clienteNome = ev.summary||'';
+      if(!existing.clienteId){
+        const nome = stripApptServ(ev.summary||'', existing.servicoDescricao);
+        if(existing.clienteNome!==nome) patch.clienteNome = nome;
+      }
       if(Object.keys(patch).length) await db.collection('appointments').doc(existing.id).update(patch);
     } else {
       await db.collection('appointments').add({
@@ -1193,7 +1205,7 @@ function renderPainel(){
   const rows = proximos.map(a=>{
     const badge = a.data===today?'Hoje':a.data===tomorrow?'Amanhã':formatDateBR(a.data);
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--line);font-size:13.5px;">
-      <div><b>${badge}${a.hora?' · '+a.hora:''}</b> — ${escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso')}<div style="color:var(--ink-soft);font-size:12.5px;">${escapeHtml(a.servicoDescricao||'—')}</div></div>
+      <div><b>${badge}${a.hora?' · '+a.hora:''}</b> — ${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso')}<div style="color:var(--ink-soft);font-size:12.5px;">${escapeHtml(a.servicoDescricao||'—')}</div></div>
       ${statusPill(a.status)}
     </div>`;
   }).join('') || `<div class="empty-state" style="padding:24px 0;">Nenhum agendamento próximo.</div>`;
@@ -1507,10 +1519,10 @@ function bumpHora(hora, hoursToAdd){
   return `${pad2(h)}:${pad2(m)}`;
 }
 function apptMsgConfirmacao(a){
-  return `Olá, ${a.clienteNome||clientName(a.clienteId)||'tudo bem'}! Seu serviço de ${a.servicoDescricao||'manutenção'} está confirmado para o dia ${formatDateBR(a.data)} às ${a.hora}. Qualquer dúvida estamos à disposição.\n— ${EMPRESA.nome} ${EMPRESA.slogan}`;
+  return `Olá, ${stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'tudo bem'}! Seu serviço de ${a.servicoDescricao||'manutenção'} está confirmado para o dia ${formatDateBR(a.data)} às ${a.hora}. Qualquer dúvida estamos à disposição.\n— ${EMPRESA.nome} ${EMPRESA.slogan}`;
 }
 function apptMsgLembrete(a){
-  return `Olá, ${a.clienteNome||clientName(a.clienteId)||'tudo bem'}! Passando para lembrar do seu serviço de ${a.servicoDescricao||'manutenção'} no dia ${formatDateBR(a.data)}, às ${a.hora}. Até lá!\n— ${EMPRESA.nome} ${EMPRESA.slogan}`;
+  return `Olá, ${stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'tudo bem'}! Passando para lembrar do seu serviço de ${a.servicoDescricao||'manutenção'} no dia ${formatDateBR(a.data)}, às ${a.hora}. Até lá!\n— ${EMPRESA.nome} ${EMPRESA.slogan}`;
 }
 
 function renderAgenda(){
@@ -1539,7 +1551,7 @@ function renderAgendaList(){
   if(!uiState.agendaShowPast) list = list.filter(a=>a.data>=today || (a.status!=='Concluído' && a.status!=='Cancelado'));
   const rows = list.map(a=>`<tr>
     <td data-label="Data/Hora"><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}${a.horaFim?' – '+a.horaFim:''}</span></td>
-    <td data-label="Cliente"><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</td>
+    <td data-label="Cliente"><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</td>
     <td data-label="Serviço">${escapeHtml(a.servicoDescricao||'—')}</td>
     <td data-label="Status">
       <select data-action="appt-status" data-id="${a.id}" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:16px;">
@@ -1595,13 +1607,13 @@ function renderAgendaWeek(){
         if(endFrac > startFrac) durHours = endFrac - startFrac;
       }
       const height = Math.max(24, durHours*pxPerHour - 4);
-      const cliente = escapeHtml(a.clienteNome||clientName(a.clienteId)||'Cliente avulso');
+      const cliente = escapeHtml(stripApptServ(a.clienteNome, a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso');
       const servico = a.servicoDescricao? escapeHtml(a.servicoDescricao) : '';
       const color = a.cor || APPT_COLORS[0];
       const cancelado = a.status==='Cancelado';
       const horario = `${a.hora||''}${a.horaFim?' – '+a.horaFim:''}`;
       return `<div class="week-event" style="top:${top}px;height:${height}px;background:${color};${cancelado?'opacity:.5;text-decoration:line-through;':''}" data-action="edit-appt" data-id="${a.id}" title="${cliente}${servico?' — '+servico:''}">
-        <b>${cliente}</b>${servico?`<br>${servico}`:''}<div class="week-event-time">${horario}</div>
+        <b>${cliente}</b>${servico?`<div class="week-event-desc">${servico}</div>`:''}<div class="week-event-time">${horario}</div>
       </div>`;
     }).join('');
     return `<div class="week-day-body" data-date="${d}" style="height:${bodyHeight}px;">${slots}${evs}</div>`;
@@ -1636,7 +1648,7 @@ function apptModalHtml(a){
       <div class="field"><label>Cliente cadastrado</label>
         <select name="clienteId"><option value="">— avulso —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===a.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
       </div>
-      <div class="field"><label>Nome (se avulso)</label><input name="clienteNome" value="${escapeHtml(a.clienteNome)}"></div>
+      <div class="field"><label>Nome (se avulso)</label><input name="clienteNome" value="${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao))}"></div>
       <div class="field span2"><label>Serviço</label>
         <select name="servicoId" id="appt-servico-select">
           <option value="">— descrever manualmente —</option>
