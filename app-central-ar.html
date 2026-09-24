@@ -447,7 +447,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.23.2';
+const APP_VERSION = 'v1.24.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1700,7 +1700,7 @@ async function handleApptForm(form){
 /* ============================================================
    ORÇAMENTOS
 ============================================================ */
-function newBudgetDraft(){ return {clienteId:'', data:todayStr(), validadeDias:15, modo:'fechado', itens:[], obs:'', status:'Aberto'}; }
+function newBudgetDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), validadeDias:15, modo:'fechado', itens:[], obs:'', status:'Aberto'}; }
 
 function renderOrcamentos(){
   if(budgetDraft) return renderBudgetEditor();
@@ -1716,6 +1716,7 @@ function renderOrcamentos(){
       </select>
     </td>
     <td><div class="row-actions">
+      <button class="icon-btn" data-action="edit-budget" data-id="${b.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="print-budget" data-id="${b.id}" title="Imprimir">${printIcon}</button>
       ${b.status==='Aprovado' ? `<button class="btn small" data-action="report-from-budget" data-id="${b.id}">Gerar relatório</button>` : ''}
       <button class="icon-btn" data-action="delete-budget" data-id="${b.id}">${trashIcon}</button>
@@ -1743,7 +1744,7 @@ function renderBudgetEditor(){
       <button class="icon-btn" data-action="budget-item-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('') || `<div class="empty-state" style="padding:20px 0;">Adicione itens ao orçamento.</div>`;
   return `
-  <div class="page-head"><div><h1>Novo orçamento</h1><p>Modo de precificação escolhido fica só para você — o documento final é idêntico nos dois casos.</p></div></div>
+  <div class="page-head"><div><h1>${d.id? 'Editando orçamento #'+(d.numero||'') : 'Novo orçamento'}</h1><p>Modo de precificação escolhido fica só para você — o documento final é idêntico nos dois casos.</p></div></div>
   <div class="editor-card">
     <div class="tab-toggle">
       <button data-action="budget-modo" data-v="fechado" class="${d.modo==='fechado'?'active':''}">Preço fechado (catálogo)</button>
@@ -1751,8 +1752,9 @@ function renderBudgetEditor(){
     </div>
     <div class="field-grid">
       <div class="field"><label>Cliente</label>
-        <select data-live-input="budget-cliente"><option value="">— avulso —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
+        <select data-live-input="budget-cliente"><option value="">— avulso (digitar nome) —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
       </div>
+      <div class="field"><label>Nome do cliente (se não cadastrado)</label><input data-live-input="budget-nome" value="${escapeHtml(d.clienteNome||'')}" ${d.clienteId?'disabled':''} placeholder="Digite o nome"></div>
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-budget" type="date" data-live-input="budget-data" value="${d.data}">${dateIconBtn('date-budget')}</div></div>
       <div class="field"><label>Validade (dias)</label><input type="number" data-live-input="budget-validade" value="${d.validadeDias}"></div>
     </div>
@@ -1780,7 +1782,7 @@ function renderBudgetEditor(){
     <div class="field" style="margin-top:14px;"><label>Observações (aparece no orçamento)</label><textarea data-live-input="budget-obs">${escapeHtml(d.obs)}</textarea></div>
     <div class="modal-actions">
       <button class="btn ghost" data-action="cancel-budget">Cancelar</button>
-      <button class="btn primary" data-action="save-budget" ${d.itens.length?'':'disabled'}>Salvar orçamento</button>
+      <button class="btn primary" data-action="save-budget" ${d.itens.length?'':'disabled'}>${d.id? 'Salvar alterações' : 'Salvar orçamento'}</button>
     </div>
   </div>`;
 }
@@ -1810,7 +1812,7 @@ function renderRelatorios(){
 function newReportDraft(budgetId){
   const budget = budgetId? STATE.budgets.find(b=>b.id===budgetId) : null;
   return {
-    budgetId: budgetId||'', clienteId: budget? budget.clienteId : '', clienteNome:'', data: todayStr(),
+    budgetId: budgetId||'', clienteId: budget? budget.clienteId : '', clienteNome: budget? (budget.clienteNome||'') : '', data: todayStr(),
     itensPrevistos: budget? budget.itens.map(i=>({descricao:i.descricao, valor:i.valor*i.qtd, checked:true})) : [],
     itensExtras: [], aparelhos: [], condicoes:['Pix'], obs:''
   };
@@ -1884,8 +1886,9 @@ function renderReportEditor(){
     <div class="section-title" style="margin-top:0;">${d.id? 'Editando relatório' : 'Novo relatório'}</div>
     <div class="field-grid">
       <div class="field"><label>Cliente</label>
-        <select data-live-input="report-cliente" ${d.budgetId?'disabled':''}><option value="">— avulso —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
+        <select data-live-input="report-cliente" ${d.budgetId?'disabled':''}><option value="">— avulso (digitar nome) —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
       </div>
+      <div class="field"><label>Nome do cliente (se não cadastrado)</label><input data-live-input="report-nome" value="${escapeHtml(d.clienteNome||'')}" ${d.clienteId?'disabled':''} placeholder="Digite o nome"></div>
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-report" type="date" data-live-input="report-data" value="${d.data}">${dateIconBtn('date-report')}</div></div>
     </div>
     <div class="section-title" style="margin-top:0;">Aparelho(s) atendido(s) <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— qual equipamento e quantos</span></div>
@@ -1969,8 +1972,9 @@ function renderPhotoEditor(){
   <div class="editor-card">
     <div class="field-grid">
       <div class="field"><label>Cliente</label>
-        <select data-live-input="photo-cliente"><option value="">— avulso —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
+        <select data-live-input="photo-cliente"><option value="">— avulso (digitar nome) —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
       </div>
+      <div class="field"><label>Nome do cliente (se não cadastrado)</label><input data-live-input="photo-nome" value="${escapeHtml(d.clienteNome||'')}" ${d.clienteId?'disabled':''} placeholder="Digite o nome"></div>
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-photo" type="date" data-live-input="photo-data" value="${d.data}">${dateIconBtn('date-photo')}</div></div>
     </div>
     <div class="section-title">Serviços feitos</div>
@@ -2068,8 +2072,9 @@ function renderChecklistEditor(){
   <div class="editor-card">
     <div class="field-grid">
       <div class="field"><label>Cliente</label>
-        <select data-live-input="checklist-cliente"><option value="">— avulso —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
+        <select data-live-input="checklist-cliente"><option value="">— avulso (digitar nome) —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
       </div>
+      <div class="field"><label>Nome do cliente (se não cadastrado)</label><input data-live-input="checklist-nome" value="${escapeHtml(d.clienteNome||'')}" ${d.clienteId?'disabled':''} placeholder="Digite o nome"></div>
       <div class="field"><label>Data da visita</label><div class="date-input-wrap"><input id="date-checklist" type="date" data-live-input="checklist-data" value="${d.data}">${dateIconBtn('date-checklist')}</div></div>
       <div class="field span2"><label>Equipamento (ativo)</label><input data-live-input="checklist-ativo" value="${escapeHtml(d.ativo)}" placeholder="Ex: Ar condicionado Carrier 36.000 BTUs"></div>
       <div class="field span2"><label>Informações do serviço</label><input data-live-input="checklist-info" value="${escapeHtml(d.infoServico)}" placeholder="Tempo de atendimento, tempo de execução..."></div>
@@ -2876,9 +2881,18 @@ document.addEventListener('click', async (e)=>{
   if(action==='budget-item-rm'){ budgetDraft.itens.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='save-budget'){
     const total = budgetDraft.itens.reduce((s,i)=>s+i.valor*i.qtd,0);
-    const numero = await nextBudgetNumber();
-    await db.collection('budgets').add({...budgetDraft, total, numero});
+    if(budgetDraft.id){
+      const {id, ...data} = budgetDraft;
+      await db.collection('budgets').doc(id).update({...data, total});
+    } else {
+      const numero = await nextBudgetNumber();
+      await db.collection('budgets').add({...budgetDraft, total, numero});
+    }
     budgetDraft=null; editingDraft=false; toast('Orçamento salvo!'); render(); return;
+  }
+  if(action==='edit-budget'){
+    const b = STATE.budgets.find(x=>x.id===btn.dataset.id); if(!b) return;
+    budgetDraft = JSON.parse(JSON.stringify({...newBudgetDraft(), ...b})); editingDraft=true; render(); return;
   }
   if(action==='print-budget'){ printBudget(btn.dataset.id); return; }
   if(action==='delete-budget'){ confirmDialog('Excluir este orçamento?', async ()=>{ await db.collection('budgets').doc(btn.dataset.id).delete(); }); return; }
@@ -3058,20 +3072,20 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.liveInput==='sale-pagamento'){ saleDraft.formaPagamento = el.value; return; }
   if(el.dataset.liveInput==='sale-obs'){ saleDraft.obs = el.value; return; }
 
-  if(el.dataset.liveInput==='budget-cliente'){ budgetDraft.clienteId = el.value; return; }
+  if(el.dataset.liveInput==='budget-cliente'){ budgetDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='budget-data'){ budgetDraft.data = el.value; return; }
   if(el.dataset.liveInput==='budget-validade'){ budgetDraft.validadeDias = parseInt(el.value||15); return; }
   if(el.dataset.liveInput==='budget-obs'){ budgetDraft.obs = el.value; return; }
 
-  if(el.dataset.liveInput==='report-cliente'){ reportDraft.clienteId = el.value; return; }
+  if(el.dataset.liveInput==='report-cliente'){ reportDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='report-data'){ reportDraft.data = el.value; return; }
   if(el.dataset.liveInput==='report-obs'){ reportDraft.obs = el.value; return; }
 
-  if(el.dataset.liveInput==='photo-cliente'){ photoDraft.clienteId = el.value; return; }
+  if(el.dataset.liveInput==='photo-cliente'){ photoDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='photo-data'){ photoDraft.data = el.value; return; }
   if(el.dataset.liveInput==='photo-obs'){ photoDraft.obs = el.value; return; }
 
-  if(el.dataset.liveInput==='checklist-cliente'){ checklistDraft.clienteId = el.value; return; }
+  if(el.dataset.liveInput==='checklist-cliente'){ checklistDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='checklist-data'){ checklistDraft.data = el.value; return; }
   if(el.dataset.liveInput==='checklist-ativo'){ checklistDraft.ativo = el.value; return; }
   if(el.dataset.liveInput==='checklist-info'){ checklistDraft.infoServico = el.value; return; }
@@ -3113,6 +3127,10 @@ document.addEventListener('input', (e)=>{
   if(el.dataset.liveInput==='checklist-info'){ checklistDraft.infoServico = el.value; return; }
   if(el.dataset.liveInput==='checklist-diagnostico'){ checklistDraft.diagnostico = el.value; return; }
   if(el.dataset.liveInput==='checklist-tecnico'){ checklistDraft.tecnico = el.value; return; }
+  if(el.dataset.liveInput==='budget-nome'){ budgetDraft.clienteNome = el.value; return; }
+  if(el.dataset.liveInput==='report-nome'){ reportDraft.clienteNome = el.value; return; }
+  if(el.dataset.liveInput==='photo-nome'){ photoDraft.clienteNome = el.value; return; }
+  if(el.dataset.liveInput==='checklist-nome'){ checklistDraft.clienteNome = el.value; return; }
   if(el.dataset.liveInput==='plano-nome'){ planoDraft.clienteNome = el.value; return; }
   if(el.dataset.liveInput==='plano-titulo'){ planoDraft.titulo = el.value; return; }
   if(el.dataset.liveInput==='plano-titulo-plano'){ planoDraft.tituloPlano = el.value; return; }
