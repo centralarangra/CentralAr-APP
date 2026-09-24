@@ -364,7 +364,7 @@ tr:hover td{background:var(--paper);}
   .app,.mobile-topbar,.drawer-backdrop,.overlay,.toast,.floating-notices{display:none !important;}
   #print-root, #print-root *{visibility:visible;}
   #print-root, #print-root.show{display:block !important;position:absolute !important;inset:auto !important;top:0 !important;left:0 !important;width:100% !important;height:auto !important;overflow:visible !important;background:#fff !important;margin:0 !important;padding:0 !important;}
-  .doc-sheet{width:210mm !important;max-width:210mm !important;margin:0 !important;}
+  .doc-sheet{width:210mm !important;max-width:210mm !important;margin:0 !important;zoom:1 !important;}
   .no-print{display:none !important;}
 }
 </style>
@@ -447,7 +447,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.23.1';
+const APP_VERSION = 'v1.23.2';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2207,10 +2207,10 @@ function docFoot(){
 function docSheetHeightMM(){
   const sheet = document.querySelector('#print-root .doc-sheet');
   if(!sheet) return 297;
-  const prevWidth = sheet.style.width, prevMaxWidth = sheet.style.maxWidth;
-  sheet.style.width = '793.7008px'; sheet.style.maxWidth = '793.7008px';
+  const prevWidth = sheet.style.width, prevMaxWidth = sheet.style.maxWidth, prevZoom = sheet.style.zoom;
+  sheet.style.width = '793.7008px'; sheet.style.maxWidth = '793.7008px'; sheet.style.zoom = '1';
   const heightPx = sheet.getBoundingClientRect().height;
-  sheet.style.width = prevWidth; sheet.style.maxWidth = prevMaxWidth;
+  sheet.style.width = prevWidth; sheet.style.maxWidth = prevMaxWidth; sheet.style.zoom = prevZoom;
   return Math.ceil(heightPx / 3.7795275591 * 10) / 10 + 6;
 }
 function printPageCSS(){
@@ -2237,8 +2237,19 @@ function printNow(html, title){
     </div>
     <div class="doc-sheet">${html}</div>`;
   root.classList.add('show');
+  fitDocSheet();
   window.scrollTo(0,0);
 }
+// No celular o papel (800px) é reduzido pra caber na largura da tela; impressão não é afetada (zoom:1 no @media print)
+function fitDocSheet(){
+  const root = document.getElementById('print-root');
+  const sheet = root && root.querySelector('.doc-sheet');
+  if(!sheet || !root.classList.contains('show')) return;
+  sheet.style.zoom = '';
+  const avail = root.clientWidth - 16;
+  if(avail > 0 && avail < 800) sheet.style.zoom = (avail/800).toFixed(4);
+}
+window.addEventListener('resize', fitDocSheet);
 function buildStandaloneDoc(html, title){
   const styleEl = document.getElementById('app-styles');
   const styleContent = styleEl ? styleEl.innerHTML : '';
