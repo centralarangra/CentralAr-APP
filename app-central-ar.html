@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Central Ar">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Baloo+2:wght@600;700;800&family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style id="app-styles">
 :root{
   --navy-900:#0F2A52;
@@ -355,6 +355,7 @@ tr:hover td{background:var(--paper);}
 .doc-foot-row{display:flex;align-items:flex-start;gap:8px;}
 .doc-foot-row svg{flex:none;margin-top:1px;}
 .doc-foot-row div{line-height:1.4;}
+.doc-assinatura{font-family:'Marck Script','Segoe Script',cursive;font-weight:700;font-size:26px;line-height:1.1;color:#101B2B;}
 .doc-sign-box{width:170px;height:76px;border:1px solid #B7C2D0;border-radius:4px;flex:none;}
 .doc-bottom-img{display:block;width:100%;height:auto;}
 .doc-sheet, .doc-sheet *{text-rendering:geometricPrecision;}
@@ -424,7 +425,7 @@ tr:hover td{background:var(--paper);}
 let EMPRESA = {
   nome:'Minha Empresa', slogan:'Serviços Técnicos',
   endereco:'', whatsapp1:'', whatsapp2:'',
-  instagram:'', garantiaDias:90, logoDataUrl:''
+  instagram:'', garantiaDias:90, assinaturaResponsavel:'', logoDataUrl:''
 };
 function initialsOf(name){
   const parts = (name||'').trim().split(/\s+/).filter(Boolean);
@@ -448,7 +449,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.25.0';
+const APP_VERSION = 'v1.26.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2143,6 +2144,7 @@ function renderConfig(){
         <div class="field"><label>WhatsApp 2</label><input name="whatsapp2" type="tel" value="${escapeHtml(EMPRESA.whatsapp2)}"></div>
         <div class="field"><label>Instagram</label><input name="instagram" value="${escapeHtml(EMPRESA.instagram)}"></div>
         <div class="field"><label>Garantia (dias)</label><input name="garantiaDias" type="number" value="${EMPRESA.garantiaDias}"></div>
+        <div class="field span2"><label>Assinatura do responsável <span style="font-weight:400;color:var(--ink-soft);">(aparece nos laudos e checklists, em letra de assinatura)</span></label><input name="assinaturaResponsavel" value="${escapeHtml(EMPRESA.assinaturaResponsavel||'')}" placeholder="Ex: Nome S. Sobrenome"></div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;"><button type="submit" class="btn primary">Salvar dados da empresa</button></div>
     </form>
@@ -2259,7 +2261,7 @@ window.addEventListener('resize', fitDocSheet);
 function buildStandaloneDoc(html, title){
   const styleEl = document.getElementById('app-styles');
   const styleContent = styleEl ? styleEl.innerHTML : '';
-  const fontsLink = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">';
+  const fontsLink = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Baloo+2:wght@600;700;800&family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">';
   const pageSizeCSS = printPageCSS();
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">`+
     `<title>${escapeHtml(title||'Documento')}</title>${fontsLink}<style>${styleContent}\nhtml,body{overflow-x:auto !important;}\nbody{background:#fff;padding:20px 0;}\n${pageSizeCSS}</style></head>`+
@@ -2354,7 +2356,7 @@ function printChecklist(id){
       <div class="doc-obs"><b>Diagnóstico:</b><br>${escapeHtml(c.diagnostico||'—')}</div>
       <div class="doc-sign">
         <div><div class="line">${escapeHtml(c.tecnico||'Técnico responsável')}</div></div>
-        <div>${c.assinaturaDataUrl?`<img src="${c.assinaturaDataUrl}">`:''}<div class="line">Assinatura</div></div>
+        <div>${c.assinaturaDataUrl?`<img src="${c.assinaturaDataUrl}">`:(EMPRESA.assinaturaResponsavel?`<div class="doc-assinatura">${escapeHtml(EMPRESA.assinaturaResponsavel)}</div>`:'')}<div class="line">Assinatura</div></div>
       </div>
     </div>
     ${docFoot()}`, 'Checklist de manutenção');
@@ -2617,7 +2619,7 @@ function printLaudo(id){
       </div>
       <div class="doc-laudo-field" style="margin-top:20px;">PRÓXIMA LIMPEZA PREVISTA PARA: <b>${l.proximaLimpeza? formatDateBR(l.proximaLimpeza) : ''}</b></div>
       <div class="doc-laudo-field" style="margin-top:14px;">SENDO ESTE REGULARMENTE FEITO HIGIENIZAÇÃO E MANUTENÇÃO PREVENTIVA PELA:</div>
-      <div class="doc-laudo-field" style="margin-top:14px;">CENTRAL AR ANGRA ASS: ___________________</div>
+      <div class="doc-laudo-field" style="margin-top:14px;">CENTRAL AR ANGRA ASS: ${EMPRESA.assinaturaResponsavel? `<span class="doc-assinatura" style="display:inline-block;min-width:230px;padding:0 8px;border-bottom:1px solid #101B2B;text-align:center;">${escapeHtml(EMPRESA.assinaturaResponsavel)}</span>` : '___________________'}</div>
     </div>
     ${docFoot()}`, 'Laudo de Vigilância Sanitária');
 }
@@ -3201,7 +3203,7 @@ document.addEventListener('submit', async (e)=>{
   else if(type==='appt') await handleApptForm(form);
   else if(type==='empresa'){
     const fd = new FormData(form);
-    await saveEmpresa({nome:fd.get('nome'), slogan:fd.get('slogan'), endereco:fd.get('endereco'), whatsapp1:formatPhoneBR(fd.get('whatsapp1')), whatsapp2:formatPhoneBR(fd.get('whatsapp2')), instagram:fd.get('instagram'), garantiaDias:parseInt(fd.get('garantiaDias')||90)});
+    await saveEmpresa({nome:fd.get('nome'), slogan:fd.get('slogan'), endereco:fd.get('endereco'), whatsapp1:formatPhoneBR(fd.get('whatsapp1')), whatsapp2:formatPhoneBR(fd.get('whatsapp2')), instagram:fd.get('instagram'), garantiaDias:parseInt(fd.get('garantiaDias')||90), assinaturaResponsavel:(fd.get('assinaturaResponsavel')||'').trim()});
     toast('Dados da empresa atualizados!');
   }
 });
