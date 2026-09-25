@@ -357,6 +357,7 @@ tr:hover td{background:var(--paper);}
 .doc-foot-row div{line-height:1.4;}
 .doc-sign-box{width:170px;height:76px;border:1px solid #B7C2D0;border-radius:4px;flex:none;}
 .doc-bottom-img{display:block;width:100%;height:auto;}
+.doc-sheet, .doc-sheet *{text-rendering:geometricPrecision;}
 @media print{
   @page{margin:0;}
   html,body{margin:0 !important;padding:0 !important;}
@@ -447,7 +448,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.24.0';
+const APP_VERSION = 'v1.25.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2216,11 +2217,11 @@ function docSheetHeightMM(){
   sheet.style.width = '793.7008px'; sheet.style.maxWidth = '793.7008px'; sheet.style.zoom = '1';
   const heightPx = sheet.getBoundingClientRect().height;
   sheet.style.width = prevWidth; sheet.style.maxWidth = prevMaxWidth; sheet.style.zoom = prevZoom;
-  return Math.ceil(heightPx / 3.7795275591 * 10) / 10 + 6;
+  return Math.ceil(heightPx / 3.7795275591 * 10) / 10 + 2;
 }
 function printPageCSS(){
   const h = docSheetHeightMM();
-  return `@media print{ @page{ size:210mm ${h}mm; margin:0; } .doc-sheet{min-height:${h}mm !important;display:flex !important;flex-direction:column !important;break-after:avoid !important;page-break-after:avoid !important;} .doc-sheet .doc-bottom-img{margin-top:auto !important;} }`;
+  return `@media print{ @page{ size:210mm ${h}mm; margin:0; } .doc-sheet{height:${h}mm !important;max-height:${h}mm !important;overflow:hidden !important;display:flex !important;flex-direction:column !important;break-after:avoid !important;page-break-after:avoid !important;} .doc-sheet > *{flex-shrink:0 !important;} .doc-sheet .doc-bottom-img{margin-top:auto !important;} }`;
 }
 function applyPrintPageSize(){
   let styleEl = document.getElementById('print-page-size');
@@ -2484,6 +2485,35 @@ function printPlano(id){
 
 /* --- Laudo de Vigilância Sanitária --- */
 function newLaudoDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), cpfCnpj:'', endereco:'', numero:'', bairro:'', infAdic:'', cidade:'', cep:'', uf:'', aparelhos:[], proximaLimpeza:''}; }
+// Separa o endereço único do cadastro ("Rua X, 75 - Bairro Y - 23900-000 RJ") nos campos do laudo
+function parseEnderecoBR(str){
+  let s = (str||'').trim();
+  const out = {endereco:'', numero:'', bairro:'', cep:'', uf:''};
+  if(!s) return out;
+  let m = s.match(/\b(\d{2}\.?\d{3})-?(\d{3})\b/);
+  if(m){ out.cep = m[1].replace('.','')+'-'+m[2]; s = s.replace(m[0],' '); }
+  m = s.match(/[\s,\-\/]+([A-Z]{2})\s*$/);
+  if(m){ out.uf = m[1]; s = s.slice(0, m.index); }
+  s = s.replace(/[\s,\-–—]+$/,'');
+  const dash = s.split(/\s+[-–—]\s+/).map(x=>x.trim()).filter(Boolean);
+  let street = dash[0]||'';
+  out.bairro = dash[1]||'';
+  const com = street.split(',').map(x=>x.trim()).filter(Boolean);
+  if(com.length>1 && /^(n[ºo°.]?\s*)?(\d+\s?[A-Za-z]?|s\/n)$/i.test(com[1])){
+    street = com[0]; out.numero = com[1].replace(/^n[ºo°.]?\s*/i,'');
+    if(!out.bairro && com[2]) out.bairro = com.slice(2).join(', ');
+  } else {
+    const n = street.match(/^(.*?)[,\s]+(?:n[ºo°.]?\s*)?(\d+[A-Za-z]?|s\/n)$/i);
+    if(n){ street = n[1].trim(); out.numero = n[2]; }
+  }
+  out.endereco = street;
+  return out;
+}
+function laudoFieldsFromClient(c){
+  if(!c) return {};
+  const e = parseEnderecoBR(c.endereco);
+  return {cpfCnpj:c.documento||'', endereco:e.endereco, numero:e.numero, bairro:e.bairro, cep:e.cep, uf:e.uf, cidade:c.cidade||''};
+}
 function renderLaudoList(){
   const list = STATE.laudos.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   const rows = list.map(l=>`<tr>
@@ -3095,7 +3125,11 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.liveInput==='plano-cliente'){ planoDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='plano-data'){ planoDraft.data = el.value; return; }
   if(el.dataset.liveInput==='plano-periodo'){ planoDraft.periodicidade = el.value; return; }
-  if(el.dataset.liveInput==='laudo-cliente'){ laudoDraft.clienteId = el.value; return; }
+  if(el.dataset.liveInput==='laudo-cliente'){
+    laudoDraft.clienteId = el.value;
+    if(el.value){ Object.assign(laudoDraft, laudoFieldsFromClient(STATE.clients.find(c=>c.id===el.value))); }
+    render(); return;
+  }
   if(el.dataset.liveInput==='laudo-data'){ laudoDraft.data = el.value; return; }
   if(el.dataset.liveInput==='laudo-proxima'){ laudoDraft.proximaLimpeza = el.value; return; }
 
