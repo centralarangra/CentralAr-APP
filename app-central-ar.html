@@ -237,6 +237,8 @@ tr:hover td{background:var(--paper);}
 .editor-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:22px;box-shadow:var(--shadow);}
 .item-row{display:grid;grid-template-columns:1fr 90px 120px 32px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);}
 .item-row:last-child{border-bottom:none;}
+.item-row-head{padding:2px 0;border-bottom:1px solid var(--line);font-size:11.5px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
+.item-row-head span{padding:0 2px;}
 .item-row input,.item-row select{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:16px;width:100%;}
 .check-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;}
 .check-item label{font-size:13.5px;font-weight:600;flex:1;}
@@ -284,6 +286,7 @@ tr:hover td{background:var(--paper);}
   .grid.g3{grid-template-columns:1fr 1fr;}
   .hero-band{padding:24px 20px 52px;}
   .field-grid{grid-template-columns:1fr;}
+  .item-row-head{display:none;}
   .item-row{grid-template-columns:1fr;gap:6px;padding:12px 0;}
   .item-row > *{width:100%;}
   /* o documento impresso (orçamento/relatório/checklist) NUNCA muda de layout por causa do tamanho da tela —
@@ -448,7 +451,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.26.2';
+const APP_VERSION = 'v1.27.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1739,18 +1742,14 @@ function renderBudgetEditor(){
   const total = d.itens.reduce((s,i)=>s+i.valor*i.qtd,0);
   const rows = d.itens.map((it,idx)=>`
     <div class="item-row">
-      <div>${escapeHtml(it.descricao)}</div>
-      <input type="number" min="1" value="${it.qtd}" data-action="budget-item-qtd" data-idx="${idx}">
-      <input type="text" inputmode="decimal" value="${it.valor}" data-action="budget-item-valor" data-idx="${idx}" ${d.modo==='fechado'?'readonly style="background:var(--paper);"':''}>
+      <input type="text" value="${escapeHtml(it.descricao)}" data-action="budget-item-desc" data-idx="${idx}" placeholder="Descrição do item">
+      <input type="number" min="1" value="${it.qtd}" data-action="budget-item-qtd" data-idx="${idx}" title="Quantidade">
+      <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="budget-item-valor" data-idx="${idx}" title="Valor unitário (R$)">
       <button class="icon-btn" data-action="budget-item-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('') || `<div class="empty-state" style="padding:20px 0;">Adicione itens ao orçamento.</div>`;
   return `
-  <div class="page-head"><div><h1>${d.id? 'Editando orçamento #'+(d.numero||'') : 'Novo orçamento'}</h1><p>Modo de precificação escolhido fica só para você — o documento final é idêntico nos dois casos.</p></div></div>
+  <div class="page-head"><div><h1>${d.id? 'Editando orçamento #'+(d.numero||'') : 'Novo orçamento'}</h1><p>Escolha itens do catálogo e/ou escreva itens e valores livremente — tudo pode ser editado na lista abaixo.</p></div></div>
   <div class="editor-card">
-    <div class="tab-toggle">
-      <button data-action="budget-modo" data-v="fechado" class="${d.modo==='fechado'?'active':''}">Preço fechado (catálogo)</button>
-      <button data-action="budget-modo" data-v="aberto" class="${d.modo==='aberto'?'active':''}">Preço aberto (manual)</button>
-    </div>
     <div class="field-grid">
       <div class="field"><label>Cliente</label>
         <select data-live-input="budget-cliente"><option value="">— avulso (digitar nome) —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
@@ -1760,7 +1759,6 @@ function renderBudgetEditor(){
       <div class="field"><label>Validade (dias)</label><input type="number" data-live-input="budget-validade" value="${d.validadeDias}"></div>
     </div>
     <div class="section-title">Itens do orçamento</div>
-    ${d.modo==='fechado' ? `
     <div class="field-grid">
       <div class="field span2"><label>Adicionar do catálogo (produto, serviço ou material)</label>
         <select id="budget-catalogo">
@@ -1771,14 +1769,17 @@ function renderBudgetEditor(){
         </select>
       </div>
       <div class="field"><label>Quantidade</label><input id="budget-catalogo-qtd" type="number" min="1" value="1"></div>
-      <button class="btn" style="margin-top:22px;" data-action="budget-add-catalogo-btn">+ Adicionar</button>
-    </div>` : `
+      <button class="btn" style="margin-top:22px;" data-action="budget-add-catalogo-btn">+ Adicionar do catálogo</button>
+    </div>
+    <div class="section-title" style="font-size:14px;margin-top:18px;">Ou escreva um item e o valor <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do catálogo</span></div>
     <div class="field-grid">
       <div class="field span2"><label>Descrição do item</label><input id="item-desc-aberto" placeholder="Ex: Limpeza completa + ajuste elétrico"></div>
-      <div class="field"><label>Valor (R$)</label><input id="item-valor-aberto" type="text" inputmode="decimal"></div>
+      <div class="field"><label>Valor unitário (R$)</label><input id="item-valor-aberto" type="text" inputmode="decimal" placeholder="0,00"></div>
+      <div class="field"><label>Quantidade</label><input id="item-qtd-aberto" type="number" min="1" value="1"></div>
       <button class="btn" style="margin-top:22px;" data-action="budget-add-aberto">+ Adicionar item</button>
-    </div>`}
-    <div style="margin-top:10px;">${rows}</div>
+    </div>
+    ${d.itens.length? `<div class="item-row item-row-head"><span>Descrição</span><span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : ''}
+    <div style="margin-top:2px;">${rows}</div>
     <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total</span><span class="num">${fmt(total)}</span></div>
     <div class="field" style="margin-top:14px;"><label>Observações (aparece no orçamento)</label><textarea data-live-input="budget-obs">${escapeHtml(d.obs)}</textarea></div>
     <div class="modal-actions">
@@ -2892,7 +2893,6 @@ document.addEventListener('click', async (e)=>{
   // orçamentos
   if(action==='new-budget'){ budgetDraft = newBudgetDraft(); editingDraft=true; render(); return; }
   if(action==='cancel-budget'){ budgetDraft=null; editingDraft=false; render(); return; }
-  if(action==='budget-modo'){ budgetDraft.modo = btn.dataset.v; budgetDraft.itens=[]; render(); return; }
   if(action==='budget-add-catalogo-btn'){
     const sel = document.getElementById('budget-catalogo');
     if(!sel.value){ toast('Selecione um item do catálogo.'); return; }
@@ -2907,10 +2907,17 @@ document.addEventListener('click', async (e)=>{
     const desc = document.getElementById('item-desc-aberto').value.trim();
     const val = parseMoney(document.getElementById('item-valor-aberto').value);
     if(!desc){ toast('Preencha a descrição do item.'); return; }
-    budgetDraft.itens.push({descricao:desc, valor:val, qtd:1}); render(); return;
+    const qtdEl = document.getElementById('item-qtd-aberto');
+    const qtd = Math.max(1, parseInt((qtdEl&&qtdEl.value)||1));
+    budgetDraft.itens.push({descricao:desc, valor:val, qtd}); render(); return;
   }
   if(action==='budget-item-rm'){ budgetDraft.itens.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='save-budget'){
+    const pendDesc = document.getElementById('item-desc-aberto');
+    if(pendDesc && pendDesc.value.trim()){
+      const q = document.getElementById('item-qtd-aberto');
+      budgetDraft.itens.push({descricao:pendDesc.value.trim(), valor:parseMoney(document.getElementById('item-valor-aberto').value), qtd:Math.max(1, parseInt((q&&q.value)||1))});
+    }
     const total = budgetDraft.itens.reduce((s,i)=>s+i.valor*i.qtd,0);
     if(budgetDraft.id){
       const {id, ...data} = budgetDraft;
@@ -3080,6 +3087,7 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='fin-month'){ uiState.finMonth = el.value; render(); return; }
   if(el.dataset.action==='appt-status'){ const id=el.dataset.id; await db.collection('appointments').doc(id).update({status:el.value}); const appt=STATE.appointments.find(x=>x.id===id); if(appt) pushApptToCalendar(appt); return; }
   if(el.dataset.action==='budget-status'){ await db.collection('budgets').doc(el.dataset.id).update({status:el.value}); return; }
+  if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='budget-item-valor'){ budgetDraft.itens[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='sale-item-qtd'){ saleDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
@@ -3153,6 +3161,7 @@ document.addEventListener('input', (e)=>{
   if(el.type==='tel'){ el.value = formatPhoneBR(el.value); return; }
   if(el.dataset.liveInput==='crud-search'){ uiState.crudSearch[el.dataset.entity] = el.value; render(); return; }
   if(el.dataset.action==='photo-legenda'){ photoDraft.fotos[+el.dataset.idx].legenda = el.value; return; }
+  if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.liveInput==='sale-cliente-nome'){ saleDraft.clienteNome = el.value; return; }
   if(el.dataset.liveInput==='sale-obs'){ saleDraft.obs = el.value; return; }
   if(el.dataset.liveInput==='budget-obs'){ budgetDraft.obs = el.value; return; }
