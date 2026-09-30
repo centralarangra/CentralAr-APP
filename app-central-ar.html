@@ -455,7 +455,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.27.4';
+const APP_VERSION = 'v1.27.5';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1310,8 +1310,8 @@ function renderFinanceiro(){
   const aReceber = list.filter(t=>t.tipo==='entrada' && effectiveStatus(t)!=='Pago').reduce((s,t)=>s+t.valor,0);
   const aPagar = list.filter(t=>t.tipo==='saida' && effectiveStatus(t)!=='Pago').reduce((s,t)=>s+t.valor,0);
   if(uiState.finTipo!=='todos') list = list.filter(t=>t.tipo===uiState.finTipo);
-  const txTime = t => t.criadoEm || (t.data? new Date(t.data+'T00:00:00').getTime() : 0);
-  list = list.slice().sort((a,b)=> txTime(b) - txTime(a));
+  // Ordem por data (a que o usuário escolheu pro lançamento) primeiro; dentro do mesmo dia, o mais recente lançado fica em cima
+  list = list.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||'') || (b.criadoEm||0)-(a.criadoEm||0));
 
   const rows = list.map(t=>`<tr>
     <td data-label="Data">${formatDateBR(t.data)}</td>
