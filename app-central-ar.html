@@ -453,7 +453,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.27.2';
+const APP_VERSION = 'v1.27.3';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -468,6 +468,14 @@ const pad2 = n => String(n).padStart(2,'0');
 const todayStr = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 const monthStr = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
 const fmt = v => (v<0?'-':'') + 'R$ ' + Math.abs(v||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+const CONDICOES_ORDEM = ['Pix','Dinheiro','Cartão','Boleto'];
+// Junta opções de pagamento em português correto: "Pix, Cartão ou Boleto" (vírgula entre elas, "ou" só antes da última)
+function joinCondicoes(arr){
+  const lista = CONDICOES_ORDEM.filter(c=>(arr||[]).includes(c));
+  if(!lista.length) return '';
+  if(lista.length===1) return lista[0];
+  return lista.slice(0,-1).join(', ') + ' ou ' + lista[lista.length-1];
+}
 function parseMoney(str){
   if(typeof str==='number') return str;
   if(!str) return 0;
@@ -2316,7 +2324,7 @@ function printBudget(id){
       </div>
       <div class="doc-items">${itens}</div>
       <div class="doc-total"><span>Total</span><span>${fmt(b.total||0)}</span></div>
-      ${(b.condicoes&&b.condicoes.length)? `<div class="doc-obs"><b>Condição de pagamento:</b> ${b.condicoes.join(' ou ')}</div>`:''}
+      ${(b.condicoes&&b.condicoes.length)? `<div class="doc-obs"><b>Condição de pagamento:</b> ${joinCondicoes(b.condicoes)}</div>`:''}
       ${b.obs? `<div class="doc-obs">${escapeHtml(b.obs)}</div>`:''}
       <div class="doc-obs">Garantia de ${EMPRESA.garantiaDias} dias sobre o serviço realizado, contados a partir da conclusão.</div>
     </div>
@@ -2336,7 +2344,7 @@ function printReport(id){
       ${(r.aparelhos&&r.aparelhos.length)? `<div class="doc-meta" style="margin-bottom:14px;"><div style="grid-column:1/-1;"><b>Aparelho(s) atendido(s)</b>${r.aparelhos.map(a=>`${a.quantidade}x ${escapeHtml(a.descricao)}`).join(' · ')}</div></div>` : ''}
       <div class="doc-items">${itens}</div>
       <div class="doc-total"><span>Total</span><span>${fmt(total)}</span></div>
-      <div class="doc-obs"><b>Condição de pagamento:</b> ${(r.condicoes||[]).join(' ou ')||'—'}</div>
+      <div class="doc-obs"><b>Condição de pagamento:</b> ${joinCondicoes(r.condicoes)||'—'}</div>
       ${r.obs? `<div class="doc-obs">${escapeHtml(r.obs)}</div>`:''}
       <div class="doc-obs">Garantia de ${EMPRESA.garantiaDias} dias sobre o serviço realizado, contados a partir da conclusão.</div>
       <div class="doc-meta" style="margin-top:10px;">
