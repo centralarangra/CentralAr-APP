@@ -455,7 +455,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.27.5';
+const APP_VERSION = 'v1.27.6';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -775,6 +775,7 @@ function createGoogleDriveDb(){
   let data = {};
   let writeTimer = null;
   let pendingWrite = false;
+  let writeFailureShown = false; // evita repetir o toast de erro a cada nova tentativa
   const listeners = {};
   function collOf(path){ return data[path] || (data[path]=[]); }
   function mkSnap(d){ return {id:d.id, exists:true, data:()=>({...d}), metadata:{fromCache:false,hasPendingWrites:false}}; }
@@ -787,8 +788,29 @@ function createGoogleDriveDb(){
     pendingWrite = true;
     clearTimeout(writeTimer);
     writeTimer = setTimeout(async ()=>{
-      try{ await gdWriteData(data); }catch(e){ console.error('Falha ao gravar no Drive', e); }
-      finally{ pendingWrite = false; }
+      try{
+        await gdWriteData(data);
+        pendingWrite = false;
+        writeFailureShown = false;
+      }catch(e){
+        console.error('Falha ao gravar no Drive, tentando renovar a sessão e salvar de novo', e);
+        try{
+          await silentTokenRefresh();
+          await gdWriteData(data);
+          pendingWrite = false;
+          writeFailureShown = false;
+        }catch(e2){
+          console.error('Falha ao gravar no Drive de novo', e2);
+          if(!writeFailureShown){
+            writeFailureShown = true;
+            toast('⚠️ Não foi possível salvar no Google Drive agora. Toque em Configurações para reconectar — suas mudanças continuam aqui até isso funcionar.');
+          }
+          // pendingWrite continua true de propósito: o poll periódico não pode sobrescrever
+          // mudanças locais que ainda não foram salvas de verdade no Drive com a versão antiga de lá.
+          clearTimeout(writeTimer);
+          writeTimer = setTimeout(scheduleWrite, 30000);
+        }
+      }
     }, 800);
   }
   function makeDocRef(path,id){
