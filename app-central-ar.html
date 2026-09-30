@@ -328,6 +328,8 @@ tr:hover td{background:var(--paper);}
 .doc-meta div b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#5B6B7D;margin-bottom:3px;}
 .doc-items{margin:10px 0 18px;}
 .doc-item{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #E1E7EC;font-size:13.5px;}
+.doc-item>span:first-child{flex:1;min-width:0;}
+.doc-item>b,.doc-item>.doc-item-prices{flex:none;white-space:nowrap;}
 .doc-item b{font-weight:700;}
 .doc-item-prices{display:flex;align-items:baseline;gap:14px;flex:none;white-space:nowrap;}
 .doc-item-unit{color:#5B6B7D;font-size:12px;}
@@ -453,7 +455,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.27.3';
+const APP_VERSION = 'v1.27.4';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
