@@ -453,7 +453,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.27.1';
+const APP_VERSION = 'v1.27.2';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1706,7 +1706,7 @@ async function handleApptForm(form){
 /* ============================================================
    ORÇAMENTOS
 ============================================================ */
-function newBudgetDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), validadeDias:15, modo:'fechado', itens:[], obs:'', status:'Aberto'}; }
+function newBudgetDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), validadeDias:15, modo:'fechado', itens:[], condicoes:['Pix'], obs:'', status:'Aberto'}; }
 
 function renderOrcamentos(){
   if(budgetDraft) return renderBudgetEditor();
@@ -1783,6 +1783,11 @@ function renderBudgetEditor(){
     ${d.itens.length? `<div class="item-row item-row-head"><span>Descrição</span><span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : ''}
     <div style="margin-top:2px;">${rows}</div>
     <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total</span><span class="num">${fmt(total)}</span></div>
+    <div class="field" style="margin-top:14px;"><label>Condição de pagamento</label>
+      <div class="chips" style="margin:0;">
+        ${['Pix','Dinheiro','Cartão','Boleto'].map(c=>`<button type="button" class="chip ${(d.condicoes||[]).includes(c)?'active':''}" data-action="budget-toggle-cond" data-v="${c}">${c}</button>`).join('')}
+      </div>
+    </div>
     <div class="field" style="margin-top:14px;"><label>Observações (aparece no orçamento)</label><textarea data-live-input="budget-obs">${escapeHtml(d.obs)}</textarea></div>
     <div class="modal-actions">
       <button class="btn ghost" data-action="cancel-budget">Cancelar</button>
@@ -2311,6 +2316,7 @@ function printBudget(id){
       </div>
       <div class="doc-items">${itens}</div>
       <div class="doc-total"><span>Total</span><span>${fmt(b.total||0)}</span></div>
+      ${(b.condicoes&&b.condicoes.length)? `<div class="doc-obs"><b>Condição de pagamento:</b> ${b.condicoes.join(' ou ')}</div>`:''}
       ${b.obs? `<div class="doc-obs">${escapeHtml(b.obs)}</div>`:''}
       <div class="doc-obs">Garantia de ${EMPRESA.garantiaDias} dias sobre o serviço realizado, contados a partir da conclusão.</div>
     </div>
@@ -2914,6 +2920,13 @@ document.addEventListener('click', async (e)=>{
     budgetDraft.itens.push({descricao:desc, valor:val, qtd}); render(); return;
   }
   if(action==='budget-item-rm'){ budgetDraft.itens.splice(+btn.dataset.idx,1); render(); return; }
+  if(action==='budget-toggle-cond'){
+    budgetDraft.condicoes = budgetDraft.condicoes||[];
+    const v = btn.dataset.v;
+    const i = budgetDraft.condicoes.indexOf(v);
+    if(i>=0) budgetDraft.condicoes.splice(i,1); else budgetDraft.condicoes.push(v);
+    render(); return;
+  }
   if(action==='save-budget'){
     const pendDesc = document.getElementById('item-desc-aberto');
     if(pendDesc && pendDesc.value.trim()){
