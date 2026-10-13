@@ -455,7 +455,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.28.0';
+const APP_VERSION = 'v1.28.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1976,6 +1976,15 @@ function renderReportEditor(){
 }
 
 /* --- Relatório fotográfico --- */
+// Serviço do fotográfico: texto puro (versão antiga) ou {descricao, valor} (valor opcional)
+function photoServ(x){ return (typeof x==='string')? {descricao:x, valor:null} : {descricao:x.descricao||'', valor:(x.valor===undefined||x.valor===null||x.valor==='')? null : +x.valor}; }
+function photoServFromInputs(){
+  const desc = document.getElementById('photo-serv-desc');
+  if(!desc || !desc.value.trim()) return null;
+  const v = document.getElementById('photo-serv-valor');
+  const raw = v? v.value.trim() : '';
+  return {descricao:desc.value.trim(), valor: raw? parseMoney(raw) : null};
+}
 function newPhotoDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), servicosFeitos:[], servicosTexto:[], fotos:[], obs:''}; }
 function renderPhotoList(){
   const list = STATE.photoReports.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
@@ -1999,11 +2008,14 @@ function renderPhotoEditor(){
   const d = photoDraft;
   const sizeKb = Math.round(JSON.stringify(d.fotos).length/1024);
   d.servicosTexto = d.servicosTexto || [];
-  const servRows = d.servicosTexto.map((t,idx)=>`
-    <div class="item-row" style="grid-template-columns:1fr 32px;">
-      <div>${escapeHtml(t)}</div>
+  const servRows = d.servicosTexto.map((t,idx)=>{ const s=photoServ(t); return `
+    <div class="item-row" style="grid-template-columns:1fr 120px 32px;">
+      <div>${escapeHtml(s.descricao)}</div>
+      <div class="num" style="text-align:right;">${s.valor===null? '<span style="color:var(--ink-soft);">sem valor</span>' : fmt(s.valor)}</div>
       <button class="icon-btn" data-action="photo-serv-rm" data-idx="${idx}">${trashIcon}</button>
-    </div>`).join('');
+    </div>`; }).join('');
+  const totalServ = d.servicosTexto.reduce((s,t)=>s+(photoServ(t).valor||0),0);
+  const temValor = d.servicosTexto.some(t=>photoServ(t).valor!==null);
   const photos = d.fotos.map((f,idx)=>`
     <div class="photo-thumb">
       <img src="${f.dataUrl}">
@@ -2022,9 +2034,11 @@ function renderPhotoEditor(){
     <div class="section-title">Serviços feitos <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— escreva o que foi feito</span></div>
     <div class="field-grid">
       <div class="field span2"><label>Descrição do serviço</label><input id="photo-serv-desc" placeholder="Ex: Troca de capacitor 2,5 MFD 450V na condensadora"></div>
+      <div class="field"><label>Valor (R$) <span style="font-weight:400;color:var(--ink-soft);">— opcional</span></label><input id="photo-serv-valor" type="text" inputmode="decimal" placeholder="0,00"></div>
       <button class="btn" style="margin-top:22px;" data-action="photo-serv-add">+ Adicionar</button>
     </div>
     <div style="margin-top:6px;">${servRows}</div>
+    ${temValor? `<div class="doc-total" style="border-top:2px solid var(--line);margin-top:10px;"><span>Total</span><span class="num">${fmt(totalServ)}</span></div>` : ''}
     <div class="section-title">Fotos <span class="count">${sizeKb} KB</span></div>
     <div class="upload-box">
       <input type="file" accept="image/*" multiple id="photo-file-input" style="display:none;">
@@ -2410,7 +2424,10 @@ function printPhoto(id){
   const r = STATE.photoReports.find(x=>x.id===id); if(!r) return;
   const cli = clientById(r.clienteId);
   const servicosLegado = (r.servicosFeitos||[]).map(sid=>{ const s=STATE.services.find(x=>x.id===sid); return s? s.nome : ''; }).filter(Boolean);
-  const servicos = [...servicosLegado, ...(r.servicosTexto||[])].map(t=>`<div class="doc-check-row"><span>${escapeHtml(t)}</span><b style="color:#1E9E6B;">✓</b></div>`).join('');
+  const servLista = [...servicosLegado.map(n=>({descricao:n,valor:null})), ...(r.servicosTexto||[]).map(photoServ)];
+  const temValor = servLista.some(s=>s.valor!==null);
+  const totalServ = servLista.reduce((s,x)=>s+(x.valor||0),0);
+  const servicos = servLista.map(s=>`<div class="doc-check-row"><span>${escapeHtml(s.descricao)}</span>${s.valor!==null? `<b style="white-space:nowrap;">${fmt(s.valor)}</b>` : `<b style="color:#1E9E6B;">✓</b>`}</div>`).join('') + (temValor? `<div class="doc-total"><span>Total</span><span>${fmt(totalServ)}</span></div>` : '');
   const fotos = r.fotos.map(f=>`<div class="doc-photo"><img src="${f.dataUrl}"><div>${escapeHtml(f.legenda||'')}</div></div>`).join('');
   printNow(`
     ${docHead('RELATÓRIO FOTOGRÁFICO DE SERVIÇO')}
@@ -3048,18 +3065,17 @@ document.addEventListener('click', async (e)=>{
   if(action==='new-photo'){ photoDraft = newPhotoDraft(); editingDraft=true; render(); return; }
   if(action==='cancel-photo'){ photoDraft=null; editingDraft=false; render(); return; }
   if(action==='photo-serv-add'){
-    const el = document.getElementById('photo-serv-desc');
-    const t = el.value.trim();
-    if(!t){ toast('Escreva o serviço feito.'); return; }
+    const s = photoServFromInputs();
+    if(!s){ toast('Escreva o serviço feito.'); return; }
     photoDraft.servicosTexto = photoDraft.servicosTexto||[];
-    photoDraft.servicosTexto.push(t); render(); return;
+    photoDraft.servicosTexto.push(s); render(); return;
   }
   if(action==='photo-serv-rm'){ photoDraft.servicosTexto.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='photo-pick'){ document.getElementById('photo-file-input').click(); return; }
   if(action==='photo-rm'){ photoDraft.fotos.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='save-photo'){
-    const pend = document.getElementById('photo-serv-desc');
-    if(pend && pend.value.trim()){ photoDraft.servicosTexto = photoDraft.servicosTexto||[]; photoDraft.servicosTexto.push(pend.value.trim()); }
+    const pend = photoServFromInputs();
+    if(pend){ photoDraft.servicosTexto = photoDraft.servicosTexto||[]; photoDraft.servicosTexto.push(pend); }
     const size = JSON.stringify(photoDraft.fotos).length;
     if(size > 230000){ toast('Relatório muito grande — remova uma foto.'); return; }
     await db.collection('photoReports').add({...photoDraft});
@@ -3251,7 +3267,7 @@ document.addEventListener('input', (e)=>{
 });
 
 document.addEventListener('keydown', (e)=>{
-  if(e.key==='Enter' && e.target && e.target.id==='photo-serv-desc'){
+  if(e.key==='Enter' && e.target && (e.target.id==='photo-serv-desc' || e.target.id==='photo-serv-valor')){
     e.preventDefault();
     const b = document.querySelector('[data-action="photo-serv-add"]');
     if(b) b.click();
