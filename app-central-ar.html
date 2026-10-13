@@ -455,7 +455,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.27.6';
+const APP_VERSION = 'v1.28.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1976,7 +1976,7 @@ function renderReportEditor(){
 }
 
 /* --- Relatório fotográfico --- */
-function newPhotoDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), servicosFeitos:[], fotos:[], obs:''}; }
+function newPhotoDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), servicosFeitos:[], servicosTexto:[], fotos:[], obs:''}; }
 function renderPhotoList(){
   const list = STATE.photoReports.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   const rows = list.map(r=>`<tr>
@@ -1992,16 +1992,17 @@ function renderPhotoList(){
   <div class="head-actions" style="margin-bottom:16px;"><button class="btn primary" data-action="new-photo">+ Novo relatório fotográfico</button></div>
   <div class="table-wrap">
     ${list.length? `<table><thead><tr><th>Data</th><th>Cliente</th><th>Fotos</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-    : `<div class="empty-state"><div class="display">Nenhum relatório fotográfico</div>Marque os serviços feitos e importe as fotos.</div>`}
+    : `<div class="empty-state"><div class="display">Nenhum relatório fotográfico</div>Escreva os serviços feitos e importe as fotos.</div>`}
   </div>`;
 }
 function renderPhotoEditor(){
   const d = photoDraft;
   const sizeKb = Math.round(JSON.stringify(d.fotos).length/1024);
-  const checks = STATE.services.map(s=>`
-    <div class="check-item">
-      <label>${escapeHtml(s.nome)}</label>
-      <input type="checkbox" data-action="photo-toggle-servico" data-id="${s.id}" ${d.servicosFeitos.includes(s.id)?'checked':''} style="width:18px;height:18px;">
+  d.servicosTexto = d.servicosTexto || [];
+  const servRows = d.servicosTexto.map((t,idx)=>`
+    <div class="item-row" style="grid-template-columns:1fr 32px;">
+      <div>${escapeHtml(t)}</div>
+      <button class="icon-btn" data-action="photo-serv-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   const photos = d.fotos.map((f,idx)=>`
     <div class="photo-thumb">
@@ -2018,8 +2019,12 @@ function renderPhotoEditor(){
       <div class="field"><label>Nome do cliente (se não cadastrado)</label><input data-live-input="photo-nome" value="${escapeHtml(d.clienteNome||'')}" ${d.clienteId?'disabled':''} placeholder="Digite o nome"></div>
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-photo" type="date" data-live-input="photo-data" value="${d.data}">${dateIconBtn('date-photo')}</div></div>
     </div>
-    <div class="section-title">Serviços feitos</div>
-    ${checks}
+    <div class="section-title">Serviços feitos <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— escreva o que foi feito</span></div>
+    <div class="field-grid">
+      <div class="field span2"><label>Descrição do serviço</label><input id="photo-serv-desc" placeholder="Ex: Troca de capacitor 2,5 MFD 450V na condensadora"></div>
+      <button class="btn" style="margin-top:22px;" data-action="photo-serv-add">+ Adicionar</button>
+    </div>
+    <div style="margin-top:6px;">${servRows}</div>
     <div class="section-title">Fotos <span class="count">${sizeKb} KB</span></div>
     <div class="upload-box">
       <input type="file" accept="image/*" multiple id="photo-file-input" style="display:none;">
@@ -2404,7 +2409,8 @@ function printChecklist(id){
 function printPhoto(id){
   const r = STATE.photoReports.find(x=>x.id===id); if(!r) return;
   const cli = clientById(r.clienteId);
-  const servicos = r.servicosFeitos.map(sid=>{ const s=STATE.services.find(x=>x.id===sid); return s? `<div class="doc-check-row"><span>${escapeHtml(s.nome)}</span><b style="color:#1E9E6B;">✓</b></div>` : ''; }).join('');
+  const servicosLegado = (r.servicosFeitos||[]).map(sid=>{ const s=STATE.services.find(x=>x.id===sid); return s? s.nome : ''; }).filter(Boolean);
+  const servicos = [...servicosLegado, ...(r.servicosTexto||[])].map(t=>`<div class="doc-check-row"><span>${escapeHtml(t)}</span><b style="color:#1E9E6B;">✓</b></div>`).join('');
   const fotos = r.fotos.map(f=>`<div class="doc-photo"><img src="${f.dataUrl}"><div>${escapeHtml(f.legenda||'')}</div></div>`).join('');
   printNow(`
     ${docHead('RELATÓRIO FOTOGRÁFICO DE SERVIÇO')}
@@ -3041,14 +3047,19 @@ document.addEventListener('click', async (e)=>{
   // relatório fotográfico
   if(action==='new-photo'){ photoDraft = newPhotoDraft(); editingDraft=true; render(); return; }
   if(action==='cancel-photo'){ photoDraft=null; editingDraft=false; render(); return; }
-  if(action==='photo-toggle-servico'){
-    const id = btn.dataset.id; const i = photoDraft.servicosFeitos.indexOf(id);
-    if(i>=0) photoDraft.servicosFeitos.splice(i,1); else photoDraft.servicosFeitos.push(id);
-    return;
+  if(action==='photo-serv-add'){
+    const el = document.getElementById('photo-serv-desc');
+    const t = el.value.trim();
+    if(!t){ toast('Escreva o serviço feito.'); return; }
+    photoDraft.servicosTexto = photoDraft.servicosTexto||[];
+    photoDraft.servicosTexto.push(t); render(); return;
   }
+  if(action==='photo-serv-rm'){ photoDraft.servicosTexto.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='photo-pick'){ document.getElementById('photo-file-input').click(); return; }
   if(action==='photo-rm'){ photoDraft.fotos.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='save-photo'){
+    const pend = document.getElementById('photo-serv-desc');
+    if(pend && pend.value.trim()){ photoDraft.servicosTexto = photoDraft.servicosTexto||[]; photoDraft.servicosTexto.push(pend.value.trim()); }
     const size = JSON.stringify(photoDraft.fotos).length;
     if(size > 230000){ toast('Relatório muito grande — remova uma foto.'); return; }
     await db.collection('photoReports').add({...photoDraft});
@@ -3240,6 +3251,12 @@ document.addEventListener('input', (e)=>{
 });
 
 document.addEventListener('keydown', (e)=>{
+  if(e.key==='Enter' && e.target && e.target.id==='photo-serv-desc'){
+    e.preventDefault();
+    const b = document.querySelector('[data-action="photo-serv-add"]');
+    if(b) b.click();
+    return;
+  }
   if(e.key==='Enter' && e.target && (e.target.id==='laudo-aparelho-desc' || e.target.id==='laudo-aparelho-qtd')){
     e.preventDefault();
     const btn = document.querySelector('[data-action="laudo-add-aparelho"]');
