@@ -455,7 +455,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.29.0';
+const APP_VERSION = 'v1.30.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1993,6 +1993,7 @@ function renderPhotoList(){
     <td data-label="Cliente">${escapeHtml(clientName(r.clienteId)||r.clienteNome||'—')}</td>
     <td data-label="Fotos">${(r.fotos||[]).length} foto(s)</td>
     <td><div class="row-actions">
+      <button class="icon-btn" data-action="edit-photo" data-id="${r.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="print-photo" data-id="${r.id}">${printIcon}</button>
       <button class="icon-btn" data-action="delete-photo" data-id="${r.id}">${trashIcon}</button>
     </div></td>
@@ -2050,7 +2051,7 @@ function renderPhotoEditor(){
     <div class="field" style="margin-top:14px;"><label>Observações</label><textarea data-live-input="photo-obs">${escapeHtml(d.obs)}</textarea></div>
     <div class="modal-actions">
       <button class="btn ghost" data-action="cancel-photo">Cancelar</button>
-      <button class="btn primary" data-action="save-photo" ${d.fotos.length?'':'disabled'}>Salvar relatório</button>
+      <button class="btn primary" data-action="save-photo" ${d.fotos.length?'':'disabled'}>${d.id? 'Salvar alterações' : 'Salvar relatório'}</button>
     </div>
   </div>`;
 }
@@ -2206,6 +2207,7 @@ function renderChecklistList(){
     <td data-label="Equipamento">${escapeHtml(c.ativo||'—')}</td>
     <td data-label="Técnico">${escapeHtml(c.tecnico||'—')}</td>
     <td><div class="row-actions">
+      <button class="icon-btn" data-action="edit-checklist" data-id="${c.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="print-checklist" data-id="${c.id}">${printIcon}</button>
       <button class="icon-btn" data-action="delete-checklist" data-id="${c.id}">${trashIcon}</button>
     </div></td>
@@ -2248,7 +2250,7 @@ function renderChecklistEditor(){
     </div>
     <div class="modal-actions">
       <button class="btn ghost" data-action="cancel-checklist">Cancelar</button>
-      <button class="btn primary" data-action="save-checklist">Salvar checklist</button>
+      <button class="btn primary" data-action="save-checklist">${d.id? 'Salvar alterações' : 'Salvar checklist'}</button>
     </div>
   </div>`;
 }
@@ -3171,6 +3173,13 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='photo-serv-rm'){ photoDraft.servicosTexto.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='photo-pick'){ document.getElementById('photo-file-input').click(); return; }
+  if(action==='edit-photo'){
+    const r = STATE.photoReports.find(x=>x.id===btn.dataset.id); if(!r) return;
+    const legado = (r.servicosFeitos||[]).map(sid=>{ const s=STATE.services.find(x=>x.id===sid); return s? s.nome : ''; }).filter(Boolean);
+    photoDraft = JSON.parse(JSON.stringify({...newPhotoDraft(), ...r}));
+    photoDraft.servicosTexto = [...legado, ...(r.servicosTexto||[])]; photoDraft.servicosFeitos = [];
+    editingDraft=true; render(); return;
+  }
   if(action==='photo-crop'){ openCropper(+btn.dataset.idx); return; }
   if(action==='crop-fmt'){ cropSetFormat(btn.dataset.v); modalContent.innerHTML = cropModalHtml(); bindCropper(); return; }
   if(action==='crop-apply'){ cropApply(); return; }
@@ -3186,7 +3195,9 @@ document.addEventListener('click', async (e)=>{
     photoDraft.fotos = photoDraft.fotos.map(f=>{ const {orig, ...rest} = f; return rest; }); // descarta o original (só serve pra reenquadrar enquanto edita)
     const size = JSON.stringify(photoDraft.fotos).length;
     if(size > 230000){ toast('Relatório muito grande — remova uma foto.'); return; }
-    await db.collection('photoReports').add({...photoDraft});
+    const {id: photoId, ...photoData} = photoDraft;
+    if(photoId) await db.collection('photoReports').doc(photoId).update(photoData);
+    else await db.collection('photoReports').add(photoData);
     photoDraft=null; editingDraft=false; toast('Relatório fotográfico salvo!'); render(); return;
   }
   if(action==='print-photo'){ printPhoto(btn.dataset.id); return; }
@@ -3197,7 +3208,14 @@ document.addEventListener('click', async (e)=>{
   if(action==='cancel-checklist'){ checklistDraft=null; editingDraft=false; render(); return; }
   if(action==='checklist-item-toggle'){ checklistDraft.itens[btn.dataset.key] = btn.dataset.v==='true'; render(); return; }
   if(action==='clear-signature'){ const c=document.getElementById('sig-canvas'); c.getContext('2d').clearRect(0,0,c.width,c.height); checklistDraft.assinaturaDataUrl=''; return; }
-  if(action==='save-checklist'){ await db.collection('checklists').add({...checklistDraft}); checklistDraft=null; editingDraft=false; toast('Checklist salvo!'); render(); return; }
+  if(action==='edit-checklist'){
+    const ck = STATE.checklists.find(x=>x.id===btn.dataset.id); if(!ck) return;
+    checklistDraft = JSON.parse(JSON.stringify({...newChecklistDraft(), ...ck})); editingDraft=true; render(); return;
+  }
+  if(action==='save-checklist'){
+    const {id: ckId, ...ckData} = checklistDraft;
+    if(ckId) await db.collection('checklists').doc(ckId).update(ckData); else await db.collection('checklists').add(ckData);
+    checklistDraft=null; editingDraft=false; toast('Checklist salvo!'); render(); return; }
   if(action==='print-checklist'){ printChecklist(btn.dataset.id); return; }
   if(action==='delete-checklist'){ confirmDialog('Excluir este checklist?', async ()=>{ await db.collection('checklists').doc(btn.dataset.id).delete(); }); return; }
 
