@@ -248,7 +248,7 @@ tr:hover td{background:var(--paper);}
 .pill-toggle button.bad.active{background:var(--danger-soft);color:var(--danger);border-color:var(--danger);}
 .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px;}
 .photo-thumb{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--paper);}
-.photo-thumb img{width:100%;height:110px;object-fit:cover;display:block;}
+.photo-thumb img{width:100%;height:110px;object-fit:contain;background:#EEF1F5;display:block;}
 .photo-thumb input{border:none;border-top:1px solid var(--line);width:100%;padding:6px 8px;font-size:16px;background:transparent;}
 .photo-thumb .rm{width:100%;padding:6px;font-size:11.5px;color:var(--danger);background:transparent;border:none;border-top:1px solid var(--line);}
 .upload-box{border:2px dashed var(--line);border-radius:12px;padding:24px;text-align:center;color:var(--ink-soft);font-size:13px;}
@@ -455,7 +455,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.28.1';
+const APP_VERSION = 'v1.29.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2006,7 +2006,7 @@ function renderPhotoList(){
 }
 function renderPhotoEditor(){
   const d = photoDraft;
-  const sizeKb = Math.round(JSON.stringify(d.fotos).length/1024);
+  const sizeKb = Math.round(d.fotos.reduce((s,f)=>s+(f.dataUrl||'').length,0)/1024);
   d.servicosTexto = d.servicosTexto || [];
   const servRows = d.servicosTexto.map((t,idx)=>{ const s=photoServ(t); return `
     <div class="item-row" style="grid-template-columns:1fr 120px 32px;">
@@ -2020,6 +2020,7 @@ function renderPhotoEditor(){
     <div class="photo-thumb">
       <img src="${f.dataUrl}">
       <input placeholder="Legenda..." value="${escapeHtml(f.legenda)}" data-action="photo-legenda" data-idx="${idx}">
+      <button class="rm" style="color:var(--navy,#1B4A82);font-weight:600;" data-action="photo-crop" data-idx="${idx}">✂️ Enquadrar</button>
       <button class="rm" data-action="photo-rm" data-idx="${idx}">Remover</button>
     </div>`).join('');
   return `
@@ -2053,6 +2054,104 @@ function renderPhotoEditor(){
     </div>
   </div>`;
 }
+/* --- Enquadrar foto (recorte com arrastar + zoom) no Relatório Fotográfico --- */
+const CROP_FORMATS = {
+  pan:  {label:'Panorâmica (2:1)', r:2},
+  std:  {label:'Padrão (4:3)', r:4/3},
+  vert: {label:'Vertical (3:4)', r:3/4}
+};
+let cropState = null;
+function cropFrameSize(r){
+  const avail = Math.max(220, Math.min(520, window.innerWidth-90));
+  if(r>=1){ const fw = avail; return {fw, fh:Math.round(fw/r)}; }
+  const fh = Math.min(380, Math.round(avail*1.1)); return {fw:Math.round(fh*r), fh};
+}
+function cropClamp(){
+  const s = cropState, w = s.nw*s.scale, h = s.nh*s.scale;
+  s.offX = Math.min(0, Math.max(s.fw-w, s.offX));
+  s.offY = Math.min(0, Math.max(s.fh-h, s.offY));
+}
+function cropSetFormat(key){
+  const s = cropState; s.fmt = key;
+  const {fw,fh} = cropFrameSize(CROP_FORMATS[key].r);
+  s.fw = fw; s.fh = fh;
+  s.minScale = Math.max(fw/s.nw, fh/s.nh);
+  s.scale = s.minScale;
+  s.offX = (fw - s.nw*s.scale)/2; s.offY = (fh - s.nh*s.scale)/2;
+}
+function cropApplyView(){
+  const img = document.getElementById('crop-img'); if(!img || !cropState) return;
+  const s = cropState;
+  img.style.width = (s.nw*s.scale)+'px'; img.style.height = (s.nh*s.scale)+'px';
+  img.style.left = s.offX+'px'; img.style.top = s.offY+'px';
+}
+function cropZoomTo(newScale){
+  const s = cropState;
+  newScale = Math.min(s.minScale*4, Math.max(s.minScale, newScale));
+  const cx = (s.fw/2 - s.offX)/s.scale, cy = (s.fh/2 - s.offY)/s.scale; // ponto do centro do quadro, em pixels da foto
+  s.scale = newScale; s.offX = s.fw/2 - cx*newScale; s.offY = s.fh/2 - cy*newScale;
+  cropClamp(); cropApplyView();
+  const z = document.getElementById('crop-zoom'); if(z) z.value = (s.scale/s.minScale).toFixed(2);
+}
+function cropModalHtml(){
+  const s = cropState, f = photoDraft.fotos[s.idx];
+  return `
+  <h2>Enquadrar foto</h2>
+  <p style="margin:-8px 0 12px;color:var(--ink-soft);font-size:13px;">Arraste a foto pra posicionar e use o zoom. O que aparece no quadro é o que sai no relatório.</p>
+  <div class="chips" style="margin:0 0 12px;">
+    ${Object.keys(CROP_FORMATS).map(k=>`<button type="button" class="chip ${k===s.fmt?'active':''}" data-action="crop-fmt" data-v="${k}">${CROP_FORMATS[k].label}</button>`).join('')}
+  </div>
+  <div style="display:flex;justify-content:center;">
+    <div id="crop-frame" style="position:relative;width:${s.fw}px;height:${s.fh}px;overflow:hidden;border-radius:8px;background:#111;cursor:grab;touch-action:none;user-select:none;box-shadow:0 0 0 2px var(--line);">
+      <img id="crop-img" src="${s.src}" draggable="false" style="position:absolute;max-width:none;max-height:none;user-select:none;pointer-events:none;">
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;">
+    <span style="font-size:18px;">🔍</span>
+    <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1" style="flex:1;">
+  </div>
+  <div class="modal-actions" style="justify-content:space-between;">
+    ${f.orig? `<button type="button" class="btn ghost" data-action="crop-reset">Voltar ao original</button>` : '<span></span>'}
+    <div style="display:flex;gap:10px;">
+      <button type="button" class="btn ghost" data-action="close-modal">Cancelar</button>
+      <button type="button" class="btn primary" data-action="crop-apply">Aplicar</button>
+    </div>
+  </div>`;
+}
+function bindCropper(){
+  const frame = document.getElementById('crop-frame'), zoom = document.getElementById('crop-zoom');
+  cropApplyView();
+  let drag = null;
+  frame.addEventListener('pointerdown', e=>{ drag = {x:e.clientX, y:e.clientY, ox:cropState.offX, oy:cropState.offY}; try{ frame.setPointerCapture(e.pointerId); }catch(_){} frame.style.cursor='grabbing'; });
+  frame.addEventListener('pointermove', e=>{ if(!drag) return; cropState.offX = drag.ox + (e.clientX-drag.x); cropState.offY = drag.oy + (e.clientY-drag.y); cropClamp(); cropApplyView(); });
+  const end = ()=>{ drag = null; frame.style.cursor='grab'; };
+  frame.addEventListener('pointerup', end); frame.addEventListener('pointercancel', end);
+  frame.addEventListener('wheel', e=>{ e.preventDefault(); cropZoomTo(cropState.scale*(e.deltaY<0?1.1:1/1.1)); }, {passive:false});
+  zoom.addEventListener('input', ()=>{ cropZoomTo(cropState.minScale*parseFloat(zoom.value)); });
+}
+function openCropper(idx){
+  const f = photoDraft.fotos[idx]; if(!f) return;
+  const src = f.orig || f.dataUrl;
+  const im = new Image();
+  im.onload = ()=>{
+    cropState = {idx, src, im, nw:im.naturalWidth, nh:im.naturalHeight};
+    cropSetFormat(f.fmt || 'pan');
+    openModal(cropModalHtml()); bindCropper();
+  };
+  im.src = src;
+}
+function cropApply(){
+  const s = cropState, f = photoDraft.fotos[s.idx], r = CROP_FORMATS[s.fmt].r;
+  const LONG = 800;
+  const ow = r>=1? LONG : Math.round(LONG*r), oh = r>=1? Math.round(LONG/r) : LONG;
+  const canvas = document.createElement('canvas'); canvas.width = ow; canvas.height = oh;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,ow,oh);
+  ctx.drawImage(s.im, -s.offX/s.scale, -s.offY/s.scale, s.fw/s.scale, s.fh/s.scale, 0, 0, ow, oh);
+  photoDraft.fotos[s.idx] = {...f, orig: f.orig || f.dataUrl, dataUrl: canvas.toDataURL('image/jpeg', 0.62), fmt: s.fmt, ratio: r};
+  cropState = null; closeModal(); render();
+}
+
 function compressImage(file){
   return new Promise((resolve,reject)=>{
     const reader = new FileReader();
@@ -2428,7 +2527,7 @@ function printPhoto(id){
   const temValor = servLista.some(s=>s.valor!==null);
   const totalServ = servLista.reduce((s,x)=>s+(x.valor||0),0);
   const servicos = servLista.map(s=>`<div class="doc-check-row"><span>${escapeHtml(s.descricao)}</span>${s.valor!==null? `<b style="white-space:nowrap;">${fmt(s.valor)}</b>` : `<b style="color:#1E9E6B;">✓</b>`}</div>`).join('') + (temValor? `<div class="doc-total"><span>Total</span><span>${fmt(totalServ)}</span></div>` : '');
-  const fotos = r.fotos.map(f=>`<div class="doc-photo"><img src="${f.dataUrl}"><div>${escapeHtml(f.legenda||'')}</div></div>`).join('');
+  const fotos = r.fotos.map(f=>`<div class="doc-photo"><img src="${f.dataUrl}" ${f.ratio? 'style="height:auto;"' : ''}><div>${escapeHtml(f.legenda||'')}</div></div>`).join('');
   printNow(`
     ${docHead('RELATÓRIO FOTOGRÁFICO DE SERVIÇO')}
     <div class="doc-body">
@@ -3072,10 +3171,19 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='photo-serv-rm'){ photoDraft.servicosTexto.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='photo-pick'){ document.getElementById('photo-file-input').click(); return; }
+  if(action==='photo-crop'){ openCropper(+btn.dataset.idx); return; }
+  if(action==='crop-fmt'){ cropSetFormat(btn.dataset.v); modalContent.innerHTML = cropModalHtml(); bindCropper(); return; }
+  if(action==='crop-apply'){ cropApply(); return; }
+  if(action==='crop-reset'){
+    const f = photoDraft.fotos[cropState.idx];
+    photoDraft.fotos[cropState.idx] = {dataUrl:f.orig||f.dataUrl, legenda:f.legenda};
+    cropState = null; closeModal(); render(); return;
+  }
   if(action==='photo-rm'){ photoDraft.fotos.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='save-photo'){
     const pend = photoServFromInputs();
     if(pend){ photoDraft.servicosTexto = photoDraft.servicosTexto||[]; photoDraft.servicosTexto.push(pend); }
+    photoDraft.fotos = photoDraft.fotos.map(f=>{ const {orig, ...rest} = f; return rest; }); // descarta o original (só serve pra reenquadrar enquanto edita)
     const size = JSON.stringify(photoDraft.fotos).length;
     if(size > 230000){ toast('Relatório muito grande — remova uma foto.'); return; }
     await db.collection('photoReports').add({...photoDraft});
