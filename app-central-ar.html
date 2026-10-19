@@ -457,7 +457,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.31.0';
+const APP_VERSION = 'v1.31.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1500,11 +1500,11 @@ function renderSaleEditor(){
   const subtotal = d.itens.reduce((s,i)=>s+i.valorUnit*i.qtd,0);
   const desconto = d.temDesconto? Math.min(d.desconto||0, subtotal) : 0;
   const total = subtotal - desconto;
-  const rows = d.itens.map((it,idx)=>`
+  const rows = (d.itens.length? `<div class="item-row item-row-head"><span>Item</span><span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : '') + d.itens.map((it,idx)=>`
     <div class="item-row">
       <div>${escapeHtml(it.nome)} <span style="color:var(--ink-soft);font-size:12px;">(${it.tipo==='produto'?'produto':'serviço'})</span></div>
-      <input type="number" min="1" value="${it.qtd}" data-action="sale-item-qtd" data-idx="${idx}">
-      <div class="num" style="text-align:right;">${fmt(it.valorUnit*it.qtd)}</div>
+      <input type="number" min="1" value="${it.qtd}" data-action="sale-item-qtd" data-idx="${idx}" title="Quantidade">
+      <input type="text" inputmode="decimal" value="${(+it.valorUnit||0).toFixed(2).replace('.',',')}" data-action="sale-item-valor" data-idx="${idx}" title="Valor unitário (R$)">
       <button class="icon-btn" data-action="sale-item-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('') || `<div class="empty-state" style="padding:20px 0;">Adicione produtos ou serviços abaixo.</div>`;
   return `
@@ -1927,11 +1927,13 @@ function renderReportEditor(){
         <button class="bad ${!it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="false">Remover</button>
       </div>
     </div>`).join('') || `<div class="empty-state" style="padding:14px 0;">Nenhum item do orçamento (relatório avulso).</div>`;
-  const extraRows = d.itensExtras.map((it,idx)=>`
-    <div class="item-row" style="grid-template-columns:1fr ${temAp?'230px ':''}120px 32px;">
-      <div>${it.qtd>1?it.qtd+'x ':''}${escapeHtml(it.descricao)}</div>
+  const extraCols = `1fr ${temAp?'230px ':''}80px 130px 32px`;
+  const extraRows = (d.itensExtras.length? `<div class="item-row item-row-head" style="grid-template-columns:${extraCols};"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : '') + d.itensExtras.map((it,idx)=>`
+    <div class="item-row" style="grid-template-columns:${extraCols};">
+      <input type="text" value="${escapeHtml(it.descricao)}" data-action="report-extra-desc" data-idx="${idx}" placeholder="Descrição">
       ${apSelect('extra', idx, it.aparelhoId)}
-      <div class="num" style="text-align:right;">${fmt(it.valor*(it.qtd||1))}</div>
+      <input type="number" min="1" value="${it.qtd||1}" data-action="report-extra-qtd" data-idx="${idx}" title="Quantidade">
+      <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="report-extra-valor" data-idx="${idx}" title="Valor unitário (R$)">
       <button class="icon-btn" data-action="report-extra-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   const temItensOrcamento = d.itensPrevistos.length > 0;
@@ -2030,9 +2032,9 @@ function renderPhotoEditor(){
   const sizeKb = Math.round(d.fotos.reduce((s,f)=>s+(f.dataUrl||'').length,0)/1024);
   d.servicosTexto = d.servicosTexto || [];
   const servRows = d.servicosTexto.map((t,idx)=>{ const s=photoServ(t); return `
-    <div class="item-row" style="grid-template-columns:1fr 120px 32px;">
-      <div>${escapeHtml(s.descricao)}</div>
-      <div class="num" style="text-align:right;">${s.valor===null? '<span style="color:var(--ink-soft);">sem valor</span>' : fmt(s.valor)}</div>
+    <div class="item-row" style="grid-template-columns:1fr 130px 32px;">
+      <input type="text" value="${escapeHtml(s.descricao)}" data-action="photo-serv-edit-desc" data-idx="${idx}" placeholder="Descrição">
+      <input type="text" inputmode="decimal" value="${s.valor===null? '' : (+s.valor).toFixed(2).replace('.',',')}" data-action="photo-serv-edit-valor" data-idx="${idx}" placeholder="sem valor" title="Valor (R$) — opcional">
       <button class="icon-btn" data-action="photo-serv-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`; }).join('');
   const totalServ = d.servicosTexto.reduce((s,t)=>s+(photoServ(t).valor||0),0);
@@ -3324,6 +3326,10 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='budget-item-valor'){ budgetDraft.itens[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
+  if(el.dataset.action==='report-extra-qtd'){ reportDraft.itensExtras[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
+  if(el.dataset.action==='report-extra-valor'){ reportDraft.itensExtras[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
+  if(el.dataset.action==='photo-serv-edit-valor'){ const i=+el.dataset.idx; const s=photoServ(photoDraft.servicosTexto[i]); const raw=el.value.trim(); s.valor = raw? parseMoney(raw) : null; photoDraft.servicosTexto[i] = s; render(); return; }
+  if(el.dataset.action==='sale-item-valor'){ saleDraft.itens[+el.dataset.idx].valorUnit = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='sale-item-qtd'){ saleDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='sale-desconto-valor'){ saleDraft.desconto = parseMoney(el.value); render(); return; }
 
@@ -3401,6 +3407,8 @@ document.addEventListener('input', (e)=>{
   if(el.dataset.liveInput==='crud-search'){ uiState.crudSearch[el.dataset.entity] = el.value; render(); return; }
   if(el.dataset.action==='photo-legenda'){ photoDraft.fotos[+el.dataset.idx].legenda = el.value; return; }
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
+  if(el.dataset.action==='report-extra-desc'){ reportDraft.itensExtras[+el.dataset.idx].descricao = el.value; return; }
+  if(el.dataset.action==='photo-serv-edit-desc'){ const i=+el.dataset.idx; const s=photoServ(photoDraft.servicosTexto[i]); s.descricao = el.value; photoDraft.servicosTexto[i] = s; return; }
   if(el.dataset.liveInput==='sale-cliente-nome'){ saleDraft.clienteNome = el.value; return; }
   if(el.dataset.liveInput==='sale-obs'){ saleDraft.obs = el.value; return; }
   if(el.dataset.liveInput==='budget-obs'){ budgetDraft.obs = el.value; return; }
