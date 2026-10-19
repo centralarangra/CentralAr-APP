@@ -327,6 +327,8 @@ tr:hover td{background:var(--paper);}
 .doc-meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;font-size:13px;}
 .doc-meta div b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#5B6B7D;margin-bottom:3px;}
 .doc-items{margin:10px 0 18px;}
+.doc-aparelho-h{font-weight:700;font-size:13.5px;margin:16px 0 2px;padding:7px 10px;background:#F1F4F8;border-left:3px solid #1B4A82;color:#101B2B;}
+.doc-aparelho-items{margin-left:12px;}
 .doc-item{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #E1E7EC;font-size:13.5px;}
 .doc-item>span:first-child{flex:1;min-width:0;}
 .doc-item>b,.doc-item>.doc-item-prices{flex:none;white-space:nowrap;}
@@ -455,7 +457,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.30.0';
+const APP_VERSION = 'v1.31.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1893,9 +1895,21 @@ function reportStartModalHtml(){
     <button type="button" class="btn primary" data-action="report-start-confirm">Continuar</button>
   </div>`;
 }
+// Aparelho "atual" (pra onde vão os próximos serviços adicionados): o escolhido; se nada escolhido, o último aparelho cadastrado
+function reportAparelhoAtual(d){
+  const aps = d.aparelhos||[];
+  if(d.aparelhoAtual==='') return '';
+  if(d.aparelhoAtual && aps.some(a=>a.id===d.aparelhoAtual)) return d.aparelhoAtual;
+  return aps.length? aps[aps.length-1].id : '';
+}
+function reportAparelhoOptions(d, selected){
+  return `<option value="">— Geral (sem aparelho) —</option>` + (d.aparelhos||[]).map(a=>`<option value="${a.id}" ${a.id===selected?'selected':''}>${a.quantidade}x ${escapeHtml(a.descricao)}</option>`).join('');
+}
 function renderReportEditor(){
   const d = reportDraft;
   d.aparelhos = d.aparelhos || [];
+  const temAp = d.aparelhos.length > 0;
+  const apSelect = (kind, idx, cur) => temAp? `<select data-action="report-item-aparelho" data-kind="${kind}" data-idx="${idx}" title="De qual aparelho é este serviço" style="max-width:230px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:13px;">${reportAparelhoOptions(d, cur||'')}</select>` : '';
   const aparelhoRows = d.aparelhos.map((a,idx)=>`
     <div class="item-row" style="grid-template-columns:1fr 90px 32px;">
       <div>${escapeHtml(a.descricao)}</div>
@@ -1905,16 +1919,18 @@ function renderReportEditor(){
   const totalPrev = d.itensPrevistos.filter(i=>i.checked).reduce((s,i)=>s+i.valor,0);
   const totalExtra = d.itensExtras.reduce((s,i)=>s+i.valor*(i.qtd||1),0);
   const prevRows = d.itensPrevistos.map((it,idx)=>`
-    <div class="check-item">
-      <label>${escapeHtml(it.descricao)} — <span class="num">${fmt(it.valor)}</span> <span style="color:var(--ink-soft);font-weight:400;">(preço do orçamento, fixo)</span></label>
+    <div class="check-item" style="flex-wrap:wrap;gap:8px;">
+      <label style="flex:1;min-width:200px;">${escapeHtml(it.descricao)} — <span class="num">${fmt(it.valor)}</span> <span style="color:var(--ink-soft);font-weight:400;">(preço do orçamento, fixo)</span></label>
+      ${apSelect('prev', idx, it.aparelhoId)}
       <div class="pill-toggle">
         <button class="ok ${it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="true">Incluir</button>
         <button class="bad ${!it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="false">Remover</button>
       </div>
     </div>`).join('') || `<div class="empty-state" style="padding:14px 0;">Nenhum item do orçamento (relatório avulso).</div>`;
   const extraRows = d.itensExtras.map((it,idx)=>`
-    <div class="item-row" style="grid-template-columns:1fr 120px 32px;">
+    <div class="item-row" style="grid-template-columns:1fr ${temAp?'230px ':''}120px 32px;">
       <div>${it.qtd>1?it.qtd+'x ':''}${escapeHtml(it.descricao)}</div>
+      ${apSelect('extra', idx, it.aparelhoId)}
       <div class="num" style="text-align:right;">${fmt(it.valor*(it.qtd||1))}</div>
       <button class="icon-btn" data-action="report-extra-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
@@ -1940,7 +1956,11 @@ function renderReportEditor(){
     </div>
     <div style="margin-top:6px;">${aparelhoRows}</div>
     ${temItensOrcamento? orcamentoBlock : ''}
-    <div class="section-title">Itens extras <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do orçamento, preço aberto</span></div>
+    <div class="section-title">Serviços e itens <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do orçamento, preço aberto</span></div>
+    ${temAp? `<div class="field"><label>Os serviços que você adicionar agora são de qual aparelho?</label>
+      <select data-live-input="report-extra-aparelho">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select>
+      <div style="color:var(--ink-soft);font-size:12px;margin-top:4px;">No documento, cada serviço aparece embaixo do aparelho escolhido. Dá pra mudar a qualquer momento na lista abaixo.</div>
+    </div>` : ''}
     <div class="field-grid">
       <div class="field span2"><label>Adicionar do catálogo (produto, serviço ou material já precificado)</label>
         <select id="extra-catalogo">
@@ -2477,16 +2497,25 @@ function printBudget(id){
 function printReport(id){
   const r = STATE.serviceReports.find(x=>x.id===id); if(!r) return;
   const c = clientById(r.clienteId);
-  const itens = [
-    ...r.itensPrevistos.filter(i=>i.checked).map(i=>`<div class="doc-item"><span>${escapeHtml(i.descricao)}</span><b>${fmt(i.valor)}</b></div>`),
-    ...r.itensExtras.map(i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><b>${fmt(i.valor*(i.qtd||1))}</b></div>`)
-  ].join('');
+  // Cada serviço aparece embaixo do aparelho a que pertence (relatórios antigos, sem essa ligação, saem como antes)
+  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><b>${fmt(i.valor*(i.qtd||1))}</b></div>`;
+  const todos = [...r.itensPrevistos.filter(i=>i.checked), ...r.itensExtras];
+  const aps = r.aparelhos||[];
+  const doAp = (a,i)=> !!a.id && i.aparelhoId===a.id;
+  const agrupado = aps.length>0 && todos.some(i=>aps.some(a=>doAp(a,i)));
+  let corpoItens;
+  if(agrupado){
+    const blocos = aps.map(a=>`<div class="doc-aparelho-h">${a.quantidade}x ${escapeHtml(a.descricao)}</div><div class="doc-aparelho-items">${todos.filter(i=>doAp(a,i)).map(mkRow).join('')}</div>`).join('');
+    const soltos = todos.filter(i=>!aps.some(a=>doAp(a,i)));
+    corpoItens = blocos + (soltos.length? `<div class="doc-aparelho-h">Outros serviços</div><div class="doc-aparelho-items">${soltos.map(mkRow).join('')}</div>` : '');
+  } else {
+    corpoItens = ((aps.length)? `<div class="doc-meta" style="margin-bottom:14px;"><div style="grid-column:1/-1;"><b>Aparelho(s) atendido(s)</b>${aps.map(a=>`${a.quantidade}x ${escapeHtml(a.descricao)}`).join(' · ')}</div></div>` : '') + `<div class="doc-items">${todos.map(mkRow).join('')}</div>`;
+  }
   const total = r.itensPrevistos.filter(i=>i.checked).reduce((s,i)=>s+i.valor,0) + r.itensExtras.reduce((s,i)=>s+i.valor*(i.qtd||1),0);
   printNow(`
     ${docHead('SERVIÇOS REALIZADOS')}
     <div class="doc-body">
-      ${(r.aparelhos&&r.aparelhos.length)? `<div class="doc-meta" style="margin-bottom:14px;"><div style="grid-column:1/-1;"><b>Aparelho(s) atendido(s)</b>${r.aparelhos.map(a=>`${a.quantidade}x ${escapeHtml(a.descricao)}`).join(' · ')}</div></div>` : ''}
-      <div class="doc-items">${itens}</div>
+      ${corpoItens}
       <div class="doc-total"><span>Total</span><span>${fmt(total)}</span></div>
       <div class="doc-obs"><b>Condição de pagamento:</b> ${joinCondicoes(r.condicoes)||'—'}</div>
       ${r.obs? `<div class="doc-obs">${escapeHtml(r.obs)}</div>`:''}
@@ -3122,7 +3151,7 @@ document.addEventListener('click', async (e)=>{
     const val = parseMoney(document.getElementById('extra-valor').value);
     const qtd = Math.max(1, parseInt(document.getElementById('extra-qtd').value||1));
     if(!desc){ toast('Preencha a descrição do item.'); return; }
-    reportDraft.itensExtras.push({descricao:desc, valor:val, qtd}); render(); return;
+    reportDraft.itensExtras.push({descricao:desc, valor:val, qtd, aparelhoId:reportAparelhoAtual(reportDraft)}); render(); return;
   }
   if(action==='report-add-extra-catalogo'){
     const sel = document.getElementById('extra-catalogo');
@@ -3132,16 +3161,21 @@ document.addEventListener('click', async (e)=>{
     const item = catalogo.find(x=>x.id===id);
     if(!item) return;
     const qtd = Math.max(1, parseInt(document.getElementById('extra-catalogo-qtd').value||1));
-    reportDraft.itensExtras.push({descricao:item.nome, valor:item.preco, qtd}); render(); return;
+    reportDraft.itensExtras.push({descricao:item.nome, valor:item.preco, qtd, aparelhoId:reportAparelhoAtual(reportDraft)}); render(); return;
   }
   if(action==='report-extra-rm'){ reportDraft.itensExtras.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='report-add-aparelho'){
     const desc = document.getElementById('aparelho-desc').value.trim();
     const qtd = Math.max(1, parseInt(document.getElementById('aparelho-qtd').value||1));
     if(!desc){ toast('Preencha qual aparelho foi atendido.'); return; }
-    reportDraft.aparelhos.push({descricao:desc, quantidade:qtd}); render(); return;
+    const novo = {id:uid(), descricao:desc, quantidade:qtd};
+    reportDraft.aparelhos.push(novo); reportDraft.aparelhoAtual = novo.id; render(); return;
   }
-  if(action==='report-aparelho-rm'){ reportDraft.aparelhos.splice(+btn.dataset.idx,1); render(); return; }
+  if(action==='report-aparelho-rm'){
+    const [gone] = reportDraft.aparelhos.splice(+btn.dataset.idx,1);
+    if(gone){ [...reportDraft.itensPrevistos, ...reportDraft.itensExtras].forEach(i=>{ if(i.aparelhoId===gone.id) i.aparelhoId=''; }); if(reportDraft.aparelhoAtual===gone.id) delete reportDraft.aparelhoAtual; }
+    render(); return;
+  }
   if(action==='report-toggle-cond'){
     const v = btn.dataset.v;
     const i = reportDraft.condicoes.indexOf(v);
@@ -3157,7 +3191,7 @@ document.addEventListener('click', async (e)=>{
   if(action==='edit-report'){
     const r = STATE.serviceReports.find(x=>x.id===btn.dataset.id);
     if(!r) return;
-    reportDraft = {...r, aparelhos: r.aparelhos||[]}; editingDraft=true; render(); return;
+    reportDraft = {...r, aparelhos: (r.aparelhos||[]).map(a=>({...a, id:a.id||uid()}))}; editingDraft=true; render(); return;
   }
   if(action==='print-report'){ printReport(btn.dataset.id); return; }
   if(action==='delete-report'){ confirmDialog('Excluir este relatório?', async ()=>{ await db.collection('serviceReports').doc(btn.dataset.id).delete(); }); return; }
@@ -3316,6 +3350,11 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.liveInput==='budget-validade'){ budgetDraft.validadeDias = parseInt(el.value||15); return; }
   if(el.dataset.liveInput==='budget-obs'){ budgetDraft.obs = el.value; return; }
 
+  if(el.dataset.liveInput==='report-extra-aparelho'){ reportDraft.aparelhoAtual = el.value; return; }
+  if(el.dataset.action==='report-item-aparelho'){
+    const lista = el.dataset.kind==='prev'? reportDraft.itensPrevistos : reportDraft.itensExtras;
+    lista[+el.dataset.idx].aparelhoId = el.value; render(); return;
+  }
   if(el.dataset.liveInput==='report-cliente'){ reportDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='report-data'){ reportDraft.data = el.value; return; }
   if(el.dataset.liveInput==='report-obs'){ reportDraft.obs = el.value; return; }
