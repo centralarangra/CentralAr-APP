@@ -238,6 +238,8 @@ tr:hover td{background:var(--paper);}
 .editor-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:22px;box-shadow:var(--shadow);}
 .item-row{display:grid;grid-template-columns:1fr 90px 120px 32px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);}
 .item-row:last-child{border-bottom:none;}
+.item-row.cols-x{grid-template-columns:1fr 80px 130px 32px;}
+.item-row.cols-xa{grid-template-columns:1fr 230px 80px 130px 32px;}
 .item-row-head{padding:2px 0;border-bottom:1px solid var(--line);font-size:11.5px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
 .item-row-head span{padding:0 2px;}
 .item-row input,.item-row select{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:16px;width:100%;}
@@ -288,7 +290,7 @@ tr:hover td{background:var(--paper);}
   .hero-band{padding:24px 20px 52px;}
   .field-grid{grid-template-columns:1fr;}
   .item-row-head{display:none;}
-  .item-row{grid-template-columns:1fr;gap:6px;padding:12px 0;}
+  .item-row, .item-row.cols-x, .item-row.cols-xa{grid-template-columns:1fr;gap:6px;padding:12px 0;}
   .item-row > *{width:100%;}
   /* o documento impresso (orçamento/relatório/checklist) NUNCA muda de layout por causa do tamanho da tela —
      tem que sair sempre igual, seja no celular ou no PC. No celular, o usuário arrasta/dá zoom pra ver tudo. */
@@ -462,7 +464,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.31.3';
+const APP_VERSION = 'v1.32.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1745,7 +1747,7 @@ async function handleApptForm(form){
 /* ============================================================
    ORÇAMENTOS
 ============================================================ */
-function newBudgetDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), validadeDias:15, modo:'fechado', itens:[], condicoes:['Pix'], obs:'', status:'Aberto'}; }
+function newBudgetDraft(){ return {clienteId:'', clienteNome:'', data:todayStr(), validadeDias:15, modo:'fechado', aparelhos:[], itens:[], condicoes:['Pix'], obs:'', status:'Aberto'}; }
 
 function renderOrcamentos(){
   if(budgetDraft) return renderBudgetEditor();
@@ -1781,9 +1783,20 @@ function renderOrcamentos(){
 function renderBudgetEditor(){
   const d = budgetDraft;
   const total = d.itens.reduce((s,i)=>s+i.valor*i.qtd,0);
+  d.aparelhos = d.aparelhos || [];
+  const temAp = d.aparelhos.length > 0;
+  const bCls = temAp? 'cols-xa' : 'cols-x';
+  const apSelect = (idx, cur) => temAp? `<select data-action="budget-item-aparelho" data-idx="${idx}" title="De qual aparelho é este serviço" style="max-width:230px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:13px;">${reportAparelhoOptions(d, cur||'')}</select>` : '';
+  const aparelhoRows = d.aparelhos.map((a,idx)=>`
+    <div class="item-row" style="grid-template-columns:1fr 90px 32px;">
+      <div>${escapeHtml(a.descricao)}</div>
+      <div class="num" style="text-align:right;">${a.quantidade}x</div>
+      <button class="icon-btn" data-action="budget-aparelho-rm" data-idx="${idx}">${trashIcon}</button>
+    </div>`).join('');
   const rows = d.itens.map((it,idx)=>`
-    <div class="item-row">
+    <div class="item-row ${bCls}">
       <input type="text" value="${escapeHtml(it.descricao)}" data-action="budget-item-desc" data-idx="${idx}" placeholder="Descrição do item">
+      ${apSelect(idx, it.aparelhoId)}
       <input type="number" min="1" value="${it.qtd}" data-action="budget-item-qtd" data-idx="${idx}" title="Quantidade">
       <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="budget-item-valor" data-idx="${idx}" title="Valor unitário (R$)">
       <button class="icon-btn" data-action="budget-item-rm" data-idx="${idx}">${trashIcon}</button>
@@ -1799,7 +1812,18 @@ function renderBudgetEditor(){
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-budget" type="date" data-live-input="budget-data" value="${d.data}">${dateIconBtn('date-budget')}</div></div>
       <div class="field"><label>Validade (dias)</label><input type="number" data-live-input="budget-validade" value="${d.validadeDias}"></div>
     </div>
+    <div class="section-title">Aparelho(s) <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— qual equipamento e quantos (depois você coloca o serviço de cada um)</span></div>
+    <div class="field-grid">
+      <div class="field span2"><label>Aparelho</label><input id="budget-aparelho-desc" placeholder="Ex: Ar condicionado Split 12.000 BTU - Sala"></div>
+      <div class="field"><label>Quantidade</label><input id="budget-aparelho-qtd" type="number" min="1" value="1"></div>
+      <button class="btn" style="margin-top:22px;" data-action="budget-add-aparelho">+ Adicionar aparelho</button>
+    </div>
+    <div style="margin-top:6px;">${aparelhoRows}</div>
     <div class="section-title">Itens do orçamento</div>
+    ${temAp? `<div class="field"><label>Os itens que você adicionar agora são de qual aparelho?</label>
+      <select data-live-input="budget-extra-aparelho">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select>
+      <div style="color:var(--ink-soft);font-size:12px;margin-top:4px;">No documento, cada item aparece embaixo do aparelho escolhido. Dá pra mudar a qualquer momento na lista abaixo.</div>
+    </div>` : ''}
     <div class="field-grid">
       <div class="field span2"><label>Adicionar do catálogo (produto, serviço ou material)</label>
         <select id="budget-catalogo">
@@ -1819,7 +1843,7 @@ function renderBudgetEditor(){
       <div class="field"><label>Quantidade</label><input id="item-qtd-aberto" type="number" min="1" value="1"></div>
       <button class="btn" style="margin-top:22px;" data-action="budget-add-aberto">+ Adicionar item</button>
     </div>
-    ${d.itens.length? `<div class="item-row item-row-head"><span>Descrição</span><span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : ''}
+    ${d.itens.length? `<div class="item-row item-row-head ${bCls}"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : ''}
     <div style="margin-top:2px;">${rows}</div>
     <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total</span><span class="num">${fmt(total)}</span></div>
     <div class="field" style="margin-top:14px;"><label>Condição de pagamento</label>
@@ -1861,8 +1885,8 @@ function newReportDraft(budgetId){
   const budget = budgetId? STATE.budgets.find(b=>b.id===budgetId) : null;
   return {
     budgetId: budgetId||'', clienteId: budget? budget.clienteId : '', clienteNome: budget? (budget.clienteNome||'') : '', data: todayStr(),
-    itensPrevistos: budget? budget.itens.map(i=>({descricao:i.descricao, valor:i.valor*i.qtd, checked:true})) : [],
-    itensExtras: [], aparelhos: [], condicoes:['Pix'], obs:''
+    itensPrevistos: budget? budget.itens.map(i=>({descricao:i.descricao, valor:i.valor*i.qtd, checked:true, aparelhoId:i.aparelhoId||''})) : [],
+    itensExtras: [], aparelhos: budget? JSON.parse(JSON.stringify(budget.aparelhos||[])).map(a=>({...a, id:a.id||uid()})) : [], condicoes:['Pix'], obs:''
   };
 }
 function renderReportList(){
@@ -1932,9 +1956,9 @@ function renderReportEditor(){
         <button class="bad ${!it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="false">Remover</button>
       </div>
     </div>`).join('') || `<div class="empty-state" style="padding:14px 0;">Nenhum item do orçamento (relatório avulso).</div>`;
-  const extraCols = `1fr ${temAp?'230px ':''}80px 130px 32px`;
-  const extraRows = (d.itensExtras.length? `<div class="item-row item-row-head" style="grid-template-columns:${extraCols};"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : '') + d.itensExtras.map((it,idx)=>`
-    <div class="item-row" style="grid-template-columns:${extraCols};">
+  const extraCls = temAp? 'cols-xa' : 'cols-x';
+  const extraRows = (d.itensExtras.length? `<div class="item-row item-row-head ${extraCls}"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : '') + d.itensExtras.map((it,idx)=>`
+    <div class="item-row ${extraCls}">
       <input type="text" value="${escapeHtml(it.descricao)}" data-action="report-extra-desc" data-idx="${idx}" placeholder="Descrição">
       ${apSelect('extra', idx, it.aparelhoId)}
       <input type="number" min="1" value="${it.qtd||1}" data-action="report-extra-qtd" data-idx="${idx}" title="Quantidade">
@@ -2483,7 +2507,19 @@ async function downloadCurrentDoc(){
 function printBudget(id){
   const b = STATE.budgets.find(x=>x.id===id); if(!b) return;
   const c = clientById(b.clienteId);
-  const itens = b.itens.map(i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${i.qtd>1?`<span class="doc-item-unit">${fmt(i.valor)} cada</span>`:''}<b>${fmt(i.valor*i.qtd)}</b></span></div>`).join('');
+  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${i.qtd>1?`<span class="doc-item-unit">${fmt(i.valor)} cada</span>`:''}<b>${fmt(i.valor*i.qtd)}</b></span></div>`;
+  // cada item aparece embaixo do aparelho a que pertence (orçamentos antigos, sem essa ligação, saem como antes)
+  const aps = b.aparelhos||[];
+  const doAp = (a,i)=> !!a.id && i.aparelhoId===a.id;
+  const agrupado = aps.length>0 && b.itens.some(i=>aps.some(a=>doAp(a,i)));
+  let itens;
+  if(agrupado){
+    const blocos = aps.map(a=>`<div class="doc-aparelho-h">${a.quantidade}x ${escapeHtml(a.descricao)}</div><div class="doc-aparelho-items">${b.itens.filter(i=>doAp(a,i)).map(mkRow).join('')}</div>`).join('');
+    const soltos = b.itens.filter(i=>!aps.some(a=>doAp(a,i)));
+    itens = blocos + (soltos.length? `<div class="doc-aparelho-h">Outros itens</div><div class="doc-aparelho-items">${soltos.map(mkRow).join('')}</div>` : '');
+  } else {
+    itens = (aps.length? `<div class="doc-meta" style="margin-bottom:14px;"><div style="grid-column:1/-1;"><b>Aparelho(s)</b>${aps.map(a=>`${a.quantidade}x ${escapeHtml(a.descricao)}`).join(' · ')}</div></div>` : '') + b.itens.map(mkRow).join('');
+  }
   printNow(`
     ${docHead('ORÇAMENTO')}
     <div class="doc-body">
@@ -3101,7 +3137,7 @@ document.addEventListener('click', async (e)=>{
     const item = catalogo.find(x=>x.id===id);
     if(!item) return;
     const qtd = Math.max(1, parseInt(document.getElementById('budget-catalogo-qtd').value||1));
-    budgetDraft.itens.push({descricao:item.nome, valor:item.preco, qtd}); render(); return;
+    budgetDraft.itens.push({descricao:item.nome, valor:item.preco, qtd, aparelhoId:reportAparelhoAtual(budgetDraft)}); render(); return;
   }
   if(action==='budget-add-aberto'){
     const desc = document.getElementById('item-desc-aberto').value.trim();
@@ -3109,9 +3145,22 @@ document.addEventListener('click', async (e)=>{
     if(!desc){ toast('Preencha a descrição do item.'); return; }
     const qtdEl = document.getElementById('item-qtd-aberto');
     const qtd = Math.max(1, parseInt((qtdEl&&qtdEl.value)||1));
-    budgetDraft.itens.push({descricao:desc, valor:val, qtd}); render(); return;
+    budgetDraft.itens.push({descricao:desc, valor:val, qtd, aparelhoId:reportAparelhoAtual(budgetDraft)}); render(); return;
   }
   if(action==='budget-item-rm'){ budgetDraft.itens.splice(+btn.dataset.idx,1); render(); return; }
+  if(action==='budget-add-aparelho'){
+    const desc = document.getElementById('budget-aparelho-desc').value.trim();
+    const qtd = Math.max(1, parseInt(document.getElementById('budget-aparelho-qtd').value||1));
+    if(!desc){ toast('Preencha qual aparelho.'); return; }
+    budgetDraft.aparelhos = budgetDraft.aparelhos||[];
+    const novo = {id:uid(), descricao:desc, quantidade:qtd};
+    budgetDraft.aparelhos.push(novo); budgetDraft.aparelhoAtual = novo.id; render(); return;
+  }
+  if(action==='budget-aparelho-rm'){
+    const [gone] = budgetDraft.aparelhos.splice(+btn.dataset.idx,1);
+    if(gone){ budgetDraft.itens.forEach(i=>{ if(i.aparelhoId===gone.id) i.aparelhoId=''; }); if(budgetDraft.aparelhoAtual===gone.id) delete budgetDraft.aparelhoAtual; }
+    render(); return;
+  }
   if(action==='budget-toggle-cond'){
     budgetDraft.condicoes = budgetDraft.condicoes||[];
     const v = btn.dataset.v;
@@ -3120,11 +3169,17 @@ document.addEventListener('click', async (e)=>{
     render(); return;
   }
   if(action==='save-budget'){
+    const pendAp = document.getElementById('budget-aparelho-desc');
+    if(pendAp && pendAp.value.trim()){
+      const novo = {id:uid(), descricao:pendAp.value.trim(), quantidade:Math.max(1, parseInt(document.getElementById('budget-aparelho-qtd').value||1))};
+      budgetDraft.aparelhos = budgetDraft.aparelhos||[]; budgetDraft.aparelhos.push(novo); budgetDraft.aparelhoAtual = novo.id;
+    }
     const pendDesc = document.getElementById('item-desc-aberto');
     if(pendDesc && pendDesc.value.trim()){
       const q = document.getElementById('item-qtd-aberto');
-      budgetDraft.itens.push({descricao:pendDesc.value.trim(), valor:parseMoney(document.getElementById('item-valor-aberto').value), qtd:Math.max(1, parseInt((q&&q.value)||1))});
+      budgetDraft.itens.push({descricao:pendDesc.value.trim(), valor:parseMoney(document.getElementById('item-valor-aberto').value), qtd:Math.max(1, parseInt((q&&q.value)||1)), aparelhoId:reportAparelhoAtual(budgetDraft)});
     }
+    delete budgetDraft.aparelhoAtual;
     const total = budgetDraft.itens.reduce((s,i)=>s+i.valor*i.qtd,0);
     if(budgetDraft.id){
       const {id, ...data} = budgetDraft;
@@ -3137,7 +3192,9 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='edit-budget'){
     const b = STATE.budgets.find(x=>x.id===btn.dataset.id); if(!b) return;
-    budgetDraft = JSON.parse(JSON.stringify({...newBudgetDraft(), ...b})); editingDraft=true; render(); return;
+    budgetDraft = JSON.parse(JSON.stringify({...newBudgetDraft(), ...b})); editingDraft=true;
+    (budgetDraft.aparelhos||[]).forEach(a=>{ if(!a.id) a.id=uid(); });
+    render(); return;
   }
   if(action==='print-budget'){ printBudget(btn.dataset.id); return; }
   if(action==='delete-budget'){ confirmDialog('Excluir este orçamento?', async ()=>{ await db.collection('budgets').doc(btn.dataset.id).delete(); }); return; }
@@ -3356,6 +3413,8 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.liveInput==='sale-pagamento'){ saleDraft.formaPagamento = el.value; return; }
   if(el.dataset.liveInput==='sale-obs'){ saleDraft.obs = el.value; return; }
 
+  if(el.dataset.liveInput==='budget-extra-aparelho'){ budgetDraft.aparelhoAtual = el.value; return; }
+  if(el.dataset.action==='budget-item-aparelho'){ budgetDraft.itens[+el.dataset.idx].aparelhoId = el.value; render(); return; }
   if(el.dataset.liveInput==='budget-cliente'){ budgetDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='budget-data'){ budgetDraft.data = el.value; return; }
   if(el.dataset.liveInput==='budget-validade'){ budgetDraft.validadeDias = parseInt(el.value||15); return; }
