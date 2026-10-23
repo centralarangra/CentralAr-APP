@@ -466,7 +466,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.33.0';
+const APP_VERSION = 'v1.33.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -492,29 +492,39 @@ function calcDesconto(d, subtotal){
   const pct = +ds.pct || 0;
   const pctValor = Math.round(subtotal*pct)/100;
   const fixo = +ds.valor || 0;
-  const abates = (ds.abates||[]).map(a=>({descricao:a.descricao, qtd:a.qtd||1, valor:+a.valor||0, total:(+a.valor||0)*(a.qtd||1)}));
+  const abates = (ds.abates||[]).map(a=>({descricao:a.descricao, qtd:a.qtd||1, valor:+a.valor||0, total:(+a.valor||0)*(a.qtd||1), aparelhoId:a.aparelhoId||''}));
   const abTotal = abates.reduce((s,a)=>s+a.total,0);
   const totalDesc = Math.min(subtotal, pctValor + fixo + abTotal);
   return {pct, pctValor, fixo, abates, totalDesc, final: Math.max(0, subtotal-totalDesc), tem: totalDesc>0};
 }
-function descontoPrintHtml(d, subtotal){
+// linhas de abatimento (material do cliente) de um aparelho — aparecem embaixo dele no documento
+function descAbateRows(d, apId){
+  return ((d.desc&&d.desc.abates)||[]).filter(a=>apId && a.aparelhoId===apId).map(a=>`<div class="doc-item doc-desc"><span>Material fornecido pelo cliente: ${(a.qtd||1)>1?(a.qtd||1)+'x ':''}${escapeHtml(a.descricao)}</span><b>− ${fmt((+a.valor||0)*(a.qtd||1))}</b></div>`).join('');
+}
+function descontoPrintHtml(d, subtotal, aps, inline){
   const c = calcDesconto(d, subtotal);
   if(!c.tem) return `<div class="doc-total"><span>Total</span><span>${fmt(subtotal)}</span></div>`;
+  const apNome = id => { const x=(aps||[]).find(y=>y.id && y.id===id); return x? x.descricao : ''; };
+  const inl = a => !!inline && !!apNome(a.aparelhoId);
+  const inlTotal = c.abates.filter(inl).reduce((s,a)=>s+a.total,0);
   const row = (cls, txt, val)=>`<div class="doc-item ${cls}"><span>${txt}</span><b>${val}</b></div>`;
   return `<div class="doc-items" style="margin-top:6px;">`
     + row('doc-sub', 'Subtotal', fmt(subtotal))
     + (c.pct>0? row('doc-desc', `Desconto de ${c.pct}%`, '− '+fmt(c.pctValor)) : '')
     + (c.fixo>0? row('doc-desc', 'Desconto', '− '+fmt(c.fixo)) : '')
-    + c.abates.map(a=>row('doc-desc', `Material fornecido pelo cliente: ${a.qtd>1?a.qtd+'x ':''}${escapeHtml(a.descricao)}`, '− '+fmt(a.total))).join('')
+    + (inlTotal>0? row('doc-desc', 'Material fornecido pelo cliente (nos aparelhos acima)', '− '+fmt(inlTotal)) : '')
+    + c.abates.filter(a=>!inl(a)).map(a=>row('doc-desc', `Material fornecido pelo cliente${apNome(a.aparelhoId)? ' ('+escapeHtml(apNome(a.aparelhoId))+')' : ''}: ${a.qtd>1?a.qtd+'x ':''}${escapeHtml(a.descricao)}`, '− '+fmt(a.total))).join('')
     + `</div><div class="doc-total"><span>Total</span><span>${fmt(c.final)}</span></div>`;
 }
 function descontoEditorHtml(kind, d, subtotal){
   const ds = d.desc || {pct:0, valor:0, abates:[]};
   const c = calcDesconto(d, subtotal);
+  const temAp = (d.aparelhos||[]).length > 0;
   const chips = [0,5,10].map(p=>`<button type="button" class="chip ${(+ds.pct||0)===p?'active':''}" data-action="desc-pct" data-kind="${kind}" data-v="${p}">${p? p+'%' : 'Sem desconto'}</button>`).join('');
   const abRows = (ds.abates||[]).map((a,idx)=>`
-    <div class="item-row">
+    <div class="item-row ${temAp?'cols-xa':'cols-x'}">
       <div>${escapeHtml(a.descricao)}</div>
+      ${temAp? `<select data-action="desc-abate-ap" data-kind="${kind}" data-idx="${idx}" title="De qual aparelho é este desconto" style="max-width:230px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:13px;">${reportAparelhoOptions(d, a.aparelhoId||'')}</select>` : ''}
       <div class="num" style="text-align:right;">${a.qtd||1}x</div>
       <input type="text" inputmode="decimal" value="${(+a.valor||0).toFixed(2).replace('.',',')}" data-action="desc-abate-valor" data-kind="${kind}" data-idx="${idx}" title="Valor unitário abatido (R$)">
       <button class="icon-btn" data-action="desc-abate-rm" data-kind="${kind}" data-idx="${idx}">${trashIcon}</button>
@@ -525,6 +535,7 @@ function descontoEditorHtml(kind, d, subtotal){
     <div class="field-grid">
       <div class="field"><label>Outro desconto em R$ <span style="font-weight:400;color:var(--ink-soft);">— opcional</span></label><input type="text" inputmode="decimal" value="${ds.valor? (+ds.valor).toFixed(2).replace('.',',') : ''}" placeholder="0,00" data-action="desc-valor" data-kind="${kind}"></div>
     </div>
+    ${temAp? `<div class="field" style="margin-top:10px;"><label>De qual aparelho é este desconto?</label><select id="desc-ap-${kind}">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select></div>` : ''}
     <div class="field" style="margin-top:10px;"><label>Material/produto que o cliente fornece <span style="font-weight:400;color:var(--ink-soft);">— o valor dele é abatido do total (ex.: 2 metros de tubulação)</span></label></div>
     <div class="field-grid">
       <div class="field span2"><label>Escolher do catálogo</label>
@@ -2582,7 +2593,7 @@ function printBudget(id){
   const agrupado = aps.length>0 && b.itens.some(i=>aps.some(a=>doAp(a,i)));
   let itens;
   if(agrupado){
-    const blocos = aps.map(a=>`<div class="doc-aparelho-h">${a.quantidade}x ${escapeHtml(a.descricao)}</div><div class="doc-aparelho-items">${b.itens.filter(i=>doAp(a,i)).map(mkRow).join('')}</div>`).join('');
+    const blocos = aps.map(a=>`<div class="doc-aparelho-h">${a.quantidade}x ${escapeHtml(a.descricao)}</div><div class="doc-aparelho-items">${b.itens.filter(i=>doAp(a,i)).map(mkRow).join('')}${descAbateRows(b, a.id)}</div>`).join('');
     const soltos = b.itens.filter(i=>!aps.some(a=>doAp(a,i)));
     itens = blocos + (soltos.length? `<div class="doc-aparelho-h">Outros itens</div><div class="doc-aparelho-items">${soltos.map(mkRow).join('')}</div>` : '');
   } else {
@@ -2598,7 +2609,7 @@ function printBudget(id){
         ${c?.telefone? `<div><b>Contato</b>${escapeHtml(formatPhoneBR(c.telefone))}</div>`:''}
       </div>
       <div class="doc-items">${itens}</div>
-      ${descontoPrintHtml(b, b.itens.reduce((s,i)=>s+i.valor*i.qtd,0))}
+      ${descontoPrintHtml(b, b.itens.reduce((s,i)=>s+i.valor*i.qtd,0), aps, agrupado)}
       ${(b.condicoes&&b.condicoes.length)? `<div class="doc-obs"><b>Condição de pagamento:</b> ${joinCondicoes(b.condicoes)}</div>`:''}
       ${b.obs? `<div class="doc-obs">${escapeHtml(b.obs)}</div>`:''}
       <div class="doc-obs">Garantia de ${EMPRESA.garantiaDias} dias sobre o serviço realizado, contados a partir da conclusão.</div>
@@ -2616,7 +2627,7 @@ function printReport(id){
   const agrupado = aps.length>0 && todos.some(i=>aps.some(a=>doAp(a,i)));
   let corpoItens;
   if(agrupado){
-    const blocos = aps.map(a=>`<div class="doc-aparelho-h">${a.quantidade}x ${escapeHtml(a.descricao)}</div><div class="doc-aparelho-items">${todos.filter(i=>doAp(a,i)).map(mkRow).join('')}</div>`).join('');
+    const blocos = aps.map(a=>`<div class="doc-aparelho-h">${a.quantidade}x ${escapeHtml(a.descricao)}</div><div class="doc-aparelho-items">${todos.filter(i=>doAp(a,i)).map(mkRow).join('')}${descAbateRows(r, a.id)}</div>`).join('');
     const soltos = todos.filter(i=>!aps.some(a=>doAp(a,i)));
     corpoItens = blocos + (soltos.length? `<div class="doc-aparelho-h">Outros serviços</div><div class="doc-aparelho-items">${soltos.map(mkRow).join('')}</div>` : '');
   } else {
@@ -2627,7 +2638,7 @@ function printReport(id){
     ${docHead('SERVIÇOS REALIZADOS')}
     <div class="doc-body">
       ${corpoItens}
-      ${descontoPrintHtml(r, total)}
+      ${descontoPrintHtml(r, total, aps, agrupado)}
       <div class="doc-obs"><b>Condição de pagamento:</b> ${joinCondicoes(r.condicoes)||'—'}</div>
       ${r.obs? `<div class="doc-obs">${escapeHtml(r.obs)}</div>`:''}
       <div class="doc-obs">Garantia de ${EMPRESA.garantiaDias} dias sobre o serviço realizado, contados a partir da conclusão.</div>
@@ -3233,6 +3244,8 @@ document.addEventListener('click', async (e)=>{
       if(!desc){ toast('Escreva o que o cliente fornece.'); return; }
       item = {descricao:desc, valor:parseMoney(document.getElementById('desc-free-valor-'+k).value), qtd:Math.max(1, parseInt(document.getElementById('desc-free-qtd-'+k).value||1))};
     }
+    const apSel = document.getElementById('desc-ap-'+k);
+    item.aparelhoId = apSel? apSel.value : '';
     descOf(d).abates.push(item); render(); return;
   }
   if(action==='budget-add-aparelho'){
@@ -3245,7 +3258,7 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='budget-aparelho-rm'){
     const [gone] = budgetDraft.aparelhos.splice(+btn.dataset.idx,1);
-    if(gone){ budgetDraft.itens.forEach(i=>{ if(i.aparelhoId===gone.id) i.aparelhoId=''; }); if(budgetDraft.aparelhoAtual===gone.id) delete budgetDraft.aparelhoAtual; }
+    if(gone){ budgetDraft.itens.forEach(i=>{ if(i.aparelhoId===gone.id) i.aparelhoId=''; }); descOf(budgetDraft).abates.forEach(a=>{ if(a.aparelhoId===gone.id) a.aparelhoId=''; }); if(budgetDraft.aparelhoAtual===gone.id) delete budgetDraft.aparelhoAtual; }
     render(); return;
   }
   if(action==='budget-toggle-cond'){
@@ -3324,7 +3337,7 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='report-aparelho-rm'){
     const [gone] = reportDraft.aparelhos.splice(+btn.dataset.idx,1);
-    if(gone){ [...reportDraft.itensPrevistos, ...reportDraft.itensExtras].forEach(i=>{ if(i.aparelhoId===gone.id) i.aparelhoId=''; }); if(reportDraft.aparelhoAtual===gone.id) delete reportDraft.aparelhoAtual; }
+    if(gone){ [...reportDraft.itensPrevistos, ...reportDraft.itensExtras].forEach(i=>{ if(i.aparelhoId===gone.id) i.aparelhoId=''; }); descOf(reportDraft).abates.forEach(a=>{ if(a.aparelhoId===gone.id) a.aparelhoId=''; }); if(reportDraft.aparelhoAtual===gone.id) delete reportDraft.aparelhoAtual; }
     render(); return;
   }
   if(action==='report-toggle-cond'){
@@ -3475,6 +3488,7 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='desc-valor'){ descOf(descDraftOf(el.dataset.kind)).valor = parseMoney(el.value); render(); return; }
+  if(el.dataset.action==='desc-abate-ap'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].aparelhoId = el.value; render(); return; }
   if(el.dataset.action==='desc-abate-valor'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='budget-item-valor'){ budgetDraft.itens[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='report-extra-qtd'){ reportDraft.itensExtras[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
