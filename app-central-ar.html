@@ -239,6 +239,7 @@ tr:hover td{background:var(--paper);}
 .item-row{display:grid;grid-template-columns:1fr 90px 120px 32px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);}
 .item-row:last-child{border-bottom:none;}
 .item-row.cols-x{grid-template-columns:1fr 80px 130px 32px;}
+.item-row.cols-ap{grid-template-columns:1fr 90px 32px;}
 .item-row.cols-xa{grid-template-columns:1fr 230px 80px 130px 32px;}
 .item-row-head{padding:2px 0;border-bottom:1px solid var(--line);font-size:11.5px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
 .item-row-head span{padding:0 2px;}
@@ -290,7 +291,7 @@ tr:hover td{background:var(--paper);}
   .hero-band{padding:24px 20px 52px;}
   .field-grid{grid-template-columns:1fr;}
   .item-row-head{display:none;}
-  .item-row, .item-row.cols-x, .item-row.cols-xa{grid-template-columns:1fr;gap:6px;padding:12px 0;}
+  .item-row, .item-row.cols-x, .item-row.cols-xa, .item-row.cols-ap{grid-template-columns:1fr;gap:6px;padding:12px 0;}
   .item-row > *{width:100%;}
   /* o documento impresso (orçamento/relatório/checklist) NUNCA muda de layout por causa do tamanho da tela —
      tem que sair sempre igual, seja no celular ou no PC. No celular, o usuário arrasta/dá zoom pra ver tudo. */
@@ -466,7 +467,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.33.2';
+const APP_VERSION = 'v1.33.3';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -485,6 +486,7 @@ const CONDICOES_ORDEM = ['Pix','Dinheiro','Cartão','Boleto'];
 // Junta opções de pagamento em português correto: "Pix, Cartão ou Boleto" (vírgula entre elas, "ou" só antes da última)
 /* Desconto compartilhado (Orçamento, Serviço realizado, Fotográfico): d.desc = {pct, valor, abates:[{descricao,valor,qtd}]}
    pct = 5/10 % sobre o subtotal; valor = desconto fixo em R$; abates = material/produto que o cliente fornece (valor abatido do total) */
+function aparelhoListOf(k){ return (k==='budget'? budgetDraft : k==='laudo'? laudoDraft : reportDraft).aparelhos; }
 function descDraftOf(k){ return k==='budget'? budgetDraft : k==='photo'? photoDraft : reportDraft; }
 function descOf(d){ d.desc = d.desc || {pct:0, valor:0, abates:[]}; d.desc.abates = d.desc.abates || []; return d.desc; }
 function calcDesconto(d, subtotal){
@@ -1865,9 +1867,9 @@ function renderBudgetEditor(){
   const bCls = temAp? 'cols-xa' : 'cols-x';
   const apSelect = (idx, cur) => temAp? `<select data-action="budget-item-aparelho" data-idx="${idx}" title="De qual aparelho é este serviço" style="max-width:230px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:13px;">${reportAparelhoOptions(d, cur||'')}</select>` : '';
   const aparelhoRows = d.aparelhos.map((a,idx)=>`
-    <div class="item-row" style="grid-template-columns:1fr 90px 32px;">
-      <div>${escapeHtml(a.descricao)}</div>
-      <div class="num" style="text-align:right;">${a.quantidade}x</div>
+    <div class="item-row cols-ap">
+      <input type="text" value="${escapeHtml(a.descricao)}" data-action="aparelho-edit-desc" data-kind="budget" data-idx="${idx}" placeholder="Nome do aparelho">
+      <input type="number" min="1" value="${a.quantidade}" data-action="aparelho-edit-qtd" data-kind="budget" data-idx="${idx}" title="Quantidade">
       <button class="icon-btn" data-action="budget-aparelho-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   const rows = d.itens.map((it,idx)=>`
@@ -2018,9 +2020,9 @@ function renderReportEditor(){
   const temAp = d.aparelhos.length > 0;
   const apSelect = (kind, idx, cur) => temAp? `<select data-action="report-item-aparelho" data-kind="${kind}" data-idx="${idx}" title="De qual aparelho é este serviço" style="max-width:230px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:13px;">${reportAparelhoOptions(d, cur||'')}</select>` : '';
   const aparelhoRows = d.aparelhos.map((a,idx)=>`
-    <div class="item-row" style="grid-template-columns:1fr 90px 32px;">
-      <div>${escapeHtml(a.descricao)}</div>
-      <div class="num" style="text-align:right;">${a.quantidade}x</div>
+    <div class="item-row cols-ap">
+      <input type="text" value="${escapeHtml(a.descricao)}" data-action="aparelho-edit-desc" data-kind="report" data-idx="${idx}" placeholder="Nome do aparelho">
+      <input type="number" min="1" value="${a.quantidade}" data-action="aparelho-edit-qtd" data-kind="report" data-idx="${idx}" title="Quantidade">
       <button class="icon-btn" data-action="report-aparelho-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   const totalPrev = d.itensPrevistos.filter(i=>i.checked).reduce((s,i)=>s+i.valor,0);
@@ -2853,9 +2855,9 @@ function renderLaudoEditor(){
   const d = laudoDraft;
   d.aparelhos = d.aparelhos || [];
   const aparelhoRows = d.aparelhos.map((a,idx)=>`
-    <div class="item-row" style="grid-template-columns:1fr 90px 32px;">
-      <div>${escapeHtml(a.descricao)}</div>
-      <div class="num" style="text-align:right;">${a.quantidade}x</div>
+    <div class="item-row cols-ap">
+      <input type="text" value="${escapeHtml(a.descricao)}" data-action="aparelho-edit-desc" data-kind="laudo" data-idx="${idx}" placeholder="Nome do aparelho">
+      <input type="number" min="1" value="${a.quantidade}" data-action="aparelho-edit-qtd" data-kind="laudo" data-idx="${idx}" title="Quantidade">
       <button class="icon-btn" data-action="laudo-aparelho-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   return `
@@ -3487,6 +3489,8 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='budget-status'){ await db.collection('budgets').doc(el.dataset.id).update({status:el.value}); return; }
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
+  if(el.dataset.action==='aparelho-edit-desc'){ const a=aparelhoListOf(el.dataset.kind)[+el.dataset.idx]; if(!a.descricao.trim()) a.descricao='Aparelho'; render(); return; }
+  if(el.dataset.action==='aparelho-edit-qtd'){ aparelhoListOf(el.dataset.kind)[+el.dataset.idx].quantidade = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='desc-valor'){ descOf(descDraftOf(el.dataset.kind)).valor = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='desc-abate-ap'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].aparelhoId = el.value; render(); return; }
   if(el.dataset.action==='desc-abate-valor'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
@@ -3574,6 +3578,7 @@ document.addEventListener('input', (e)=>{
   if(el.dataset.liveInput==='crud-search'){ uiState.crudSearch[el.dataset.entity] = el.value; render(); return; }
   if(el.dataset.action==='photo-legenda'){ photoDraft.fotos[+el.dataset.idx].legenda = el.value; return; }
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
+  if(el.dataset.action==='aparelho-edit-desc'){ aparelhoListOf(el.dataset.kind)[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='report-extra-desc'){ reportDraft.itensExtras[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='photo-serv-edit-desc'){ const i=+el.dataset.idx; const s=photoServ(photoDraft.servicosTexto[i]); s.descricao = el.value; photoDraft.servicosTexto[i] = s; return; }
   if(el.dataset.liveInput==='sale-cliente-nome'){ saleDraft.clienteNome = el.value; return; }
