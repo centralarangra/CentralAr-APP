@@ -466,7 +466,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.33.1';
+const APP_VERSION = 'v1.33.2';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -535,7 +535,7 @@ function descontoEditorHtml(kind, d, subtotal){
     <div class="field-grid">
       <div class="field"><label>Outro desconto em R$ <span style="font-weight:400;color:var(--ink-soft);">— opcional</span></label><input type="text" inputmode="decimal" value="${ds.valor? (+ds.valor).toFixed(2).replace('.',',') : ''}" placeholder="0,00" data-action="desc-valor" data-kind="${kind}"></div>
     </div>
-    ${temAp? `<div class="field" style="margin-top:10px;"><label>De qual aparelho é este desconto?</label><select id="desc-ap-${kind}">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select></div>` : ''}
+    ${temAp? `<div class="field" style="margin-top:10px;"><label>Abater em qual aparelho? <span style="font-weight:400;color:var(--ink-soft);">— é o mesmo seletor dos serviços acima</span></label><select id="desc-ap-${kind}" data-live-input="${kind}-extra-aparelho">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select></div>` : ''}
     <div class="field" style="margin-top:10px;"><label>Material/produto que o cliente fornece <span style="font-weight:400;color:var(--ink-soft);">— o valor dele é abatido do total (ex.: 2 metros de tubulação)</span></label></div>
     <div class="field-grid">
       <div class="field span2"><label>Escolher do catálogo</label>
@@ -3516,14 +3516,14 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.liveInput==='sale-pagamento'){ saleDraft.formaPagamento = el.value; return; }
   if(el.dataset.liveInput==='sale-obs'){ saleDraft.obs = el.value; return; }
 
-  if(el.dataset.liveInput==='budget-extra-aparelho'){ budgetDraft.aparelhoAtual = el.value; return; }
+  if(el.dataset.liveInput==='budget-extra-aparelho'){ budgetDraft.aparelhoAtual = el.value; document.querySelectorAll('[data-live-input="budget-extra-aparelho"]').forEach(s=>{ s.value = el.value; }); return; }
   if(el.dataset.action==='budget-item-aparelho'){ budgetDraft.itens[+el.dataset.idx].aparelhoId = el.value; render(); return; }
   if(el.dataset.liveInput==='budget-cliente'){ budgetDraft.clienteId = el.value; render(); return; }
   if(el.dataset.liveInput==='budget-data'){ budgetDraft.data = el.value; return; }
   if(el.dataset.liveInput==='budget-validade'){ budgetDraft.validadeDias = parseInt(el.value||15); return; }
   if(el.dataset.liveInput==='budget-obs'){ budgetDraft.obs = el.value; return; }
 
-  if(el.dataset.liveInput==='report-extra-aparelho'){ reportDraft.aparelhoAtual = el.value; return; }
+  if(el.dataset.liveInput==='report-extra-aparelho'){ reportDraft.aparelhoAtual = el.value; document.querySelectorAll('[data-live-input="report-extra-aparelho"]').forEach(s=>{ s.value = el.value; }); return; }
   if(el.dataset.action==='report-item-aparelho'){
     const lista = el.dataset.kind==='prev'? reportDraft.itensPrevistos : reportDraft.itensExtras;
     lista[+el.dataset.idx].aparelhoId = el.value; render(); return;
