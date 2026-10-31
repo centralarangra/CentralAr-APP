@@ -240,6 +240,8 @@ tr:hover td{background:var(--paper);}
 .item-row:last-child{border-bottom:none;}
 .item-row.cols-x{grid-template-columns:1fr 80px 130px 32px;}
 .item-row.cols-ap{grid-template-columns:1fr 90px 32px;}
+.item-row.cols-xo{grid-template-columns:1fr 80px 125px 125px 32px;}
+.item-row.cols-xao{grid-template-columns:1fr 230px 80px 125px 125px 32px;}
 .item-row.cols-xa{grid-template-columns:1fr 230px 80px 130px 32px;}
 .item-row-head{padding:2px 0;border-bottom:1px solid var(--line);font-size:11.5px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
 .item-row-head span{padding:0 2px;}
@@ -291,7 +293,7 @@ tr:hover td{background:var(--paper);}
   .hero-band{padding:24px 20px 52px;}
   .field-grid{grid-template-columns:1fr;}
   .item-row-head{display:none;}
-  .item-row, .item-row.cols-x, .item-row.cols-xa, .item-row.cols-ap{grid-template-columns:1fr;gap:6px;padding:12px 0;}
+  .item-row, .item-row.cols-x, .item-row.cols-xa, .item-row.cols-ap, .item-row.cols-xo, .item-row.cols-xao{grid-template-columns:1fr;gap:6px;padding:12px 0;}
   .item-row > *{width:100%;}
   /* o documento impresso (orçamento/relatório/checklist) NUNCA muda de layout por causa do tamanho da tela —
      tem que sair sempre igual, seja no celular ou no PC. No celular, o usuário arrasta/dá zoom pra ver tudo. */
@@ -469,7 +471,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.34.0';
+const APP_VERSION = 'v1.35.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -503,10 +505,13 @@ function calcDesconto(d, subtotal){
 }
 // linhas de abatimento (material do cliente) de um aparelho — aparecem embaixo dele no documento
 // preço do item no documento: com % de desconto mostra o valor original riscado, o selo −X% e o valor com desconto ao lado
-function docPriceHtml(total, pct){
-  if(!(pct>0)) return `<b>${fmt(total)}</b>`;
-  const disc = Math.round(total*(100-pct))/100;
-  return `<span class="doc-item-old">${fmt(total)}</span><span class="doc-item-off">−${pct}%</span><b>${fmt(disc)}</b>`;
+// orig = valor original digitado no item (aparece riscado, o valor atual fica ao lado); pct = desconto % do documento
+function docPriceHtml(total, pct, orig){
+  const disc = pct>0? Math.round(total*(100-pct))/100 : total;
+  const temOrig = orig>total;
+  const old = temOrig? orig : (pct>0? total : 0);
+  if(!(old>disc)) return `<b>${fmt(disc)}</b>`;
+  return `<span class="doc-item-old">${fmt(old)}</span>${(pct>0 && !temOrig)? `<span class="doc-item-off">−${pct}%</span>` : ''}<b>${fmt(disc)}</b>`;
 }
 function descAbateRows(d, apId){
   return ((d.desc&&d.desc.abates)||[]).filter(a=>apId && a.aparelhoId===apId).map(a=>`<div class="doc-item doc-desc"><span>Material fornecido pelo cliente: ${(a.qtd||1)>1?(a.qtd||1)+'x ':''}${escapeHtml(a.descricao)}</span><b>− ${fmt((+a.valor||0)*(a.qtd||1))}</b></div>`).join('');
@@ -1872,7 +1877,7 @@ function renderBudgetEditor(){
   const total = d.itens.reduce((s,i)=>s+i.valor*i.qtd,0);
   d.aparelhos = d.aparelhos || [];
   const temAp = d.aparelhos.length > 0;
-  const bCls = temAp? 'cols-xa' : 'cols-x';
+  const bCls = temAp? 'cols-xao' : 'cols-xo';
   const apSelect = (idx, cur) => temAp? `<select data-action="budget-item-aparelho" data-idx="${idx}" title="De qual aparelho é este serviço" style="max-width:230px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:13px;">${reportAparelhoOptions(d, cur||'')}</select>` : '';
   const aparelhoRows = d.aparelhos.map((a,idx)=>`
     <div class="item-row cols-ap">
@@ -1885,7 +1890,8 @@ function renderBudgetEditor(){
       <input type="text" value="${escapeHtml(it.descricao)}" data-action="budget-item-desc" data-idx="${idx}" placeholder="Descrição do item">
       ${apSelect(idx, it.aparelhoId)}
       <input type="number" min="1" value="${it.qtd}" data-action="budget-item-qtd" data-idx="${idx}" title="Quantidade">
-      <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="budget-item-valor" data-idx="${idx}" title="Valor unitário (R$)">
+      <input type="text" inputmode="decimal" value="${it.valorOriginal>0? (+it.valorOriginal).toFixed(2).replace('.',',') : ''}" data-action="budget-item-orig" data-idx="${idx}" placeholder="Valor original" title="Valor original (R$) — opcional, aparece riscado no documento">
+      <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="budget-item-valor" data-idx="${idx}" placeholder="Valor atual" title="Valor atual unitário (R$)">
       <button class="icon-btn" data-action="budget-item-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('') || `<div class="empty-state" style="padding:20px 0;">Adicione itens ao orçamento.</div>`;
   return `
@@ -1926,11 +1932,12 @@ function renderBudgetEditor(){
     <div class="section-title" style="font-size:14px;margin-top:18px;">Ou escreva um item e o valor <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do catálogo</span></div>
     <div class="field-grid">
       <div class="field span2"><label>Descrição do item</label><input id="item-desc-aberto" placeholder="Ex: Limpeza completa + ajuste elétrico"></div>
-      <div class="field"><label>Valor unitário (R$)</label><input id="item-valor-aberto" type="text" inputmode="decimal" placeholder="0,00"></div>
+      <div class="field"><label>Valor original (R$) <span style="font-weight:400;color:var(--ink-soft);">— opcional</span></label><input id="item-orig-aberto" type="text" inputmode="decimal" placeholder="Era (ex.: 280,00)"></div>
+      <div class="field"><label>Valor atual (R$)</label><input id="item-valor-aberto" type="text" inputmode="decimal" placeholder="Ficou (ex.: 260,00)"></div>
       <div class="field"><label>Quantidade</label><input id="item-qtd-aberto" type="number" min="1" value="1"></div>
       <button class="btn" style="margin-top:22px;" data-action="budget-add-aberto">+ Adicionar item</button>
     </div>
-    ${d.itens.length? `<div class="item-row item-row-head ${bCls}"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : ''}
+    ${d.itens.length? `<div class="item-row item-row-head ${bCls}"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor original</span><span>Valor atual (R$)</span><span></span></div>` : ''}
     <div style="margin-top:2px;">${rows}</div>
     ${descontoEditorHtml('budget', d, total)}
     <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total</span><span class="num">${fmt(calcDesconto(d, total).final)}</span></div>
@@ -1973,7 +1980,7 @@ function newReportDraft(budgetId){
   const budget = budgetId? STATE.budgets.find(b=>b.id===budgetId) : null;
   return {
     budgetId: budgetId||'', clienteId: budget? budget.clienteId : '', clienteNome: budget? (budget.clienteNome||'') : '', data: todayStr(),
-    itensPrevistos: budget? budget.itens.map(i=>({descricao:i.descricao, valor:i.valor*i.qtd, checked:true, aparelhoId:i.aparelhoId||''})) : [],
+    itensPrevistos: budget? budget.itens.map(i=>({descricao:i.descricao, valor:i.valor*i.qtd, checked:true, aparelhoId:i.aparelhoId||'', valorOriginal:(i.valorOriginal||0)*i.qtd})) : [],
     itensExtras: [], aparelhos: budget? JSON.parse(JSON.stringify(budget.aparelhos||[])).map(a=>({...a, id:a.id||uid()})) : [], desc: budget&&budget.desc? JSON.parse(JSON.stringify(budget.desc)) : {pct:0,valor:0,abates:[]}, condicoes:['Pix'], obs:''
   };
 }
@@ -2044,13 +2051,14 @@ function renderReportEditor(){
         <button class="bad ${!it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="false">Remover</button>
       </div>
     </div>`).join('') || `<div class="empty-state" style="padding:14px 0;">Nenhum item do orçamento (relatório avulso).</div>`;
-  const extraCls = temAp? 'cols-xa' : 'cols-x';
-  const extraRows = (d.itensExtras.length? `<div class="item-row item-row-head ${extraCls}"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor unit. (R$)</span><span></span></div>` : '') + d.itensExtras.map((it,idx)=>`
+  const extraCls = temAp? 'cols-xao' : 'cols-xo';
+  const extraRows = (d.itensExtras.length? `<div class="item-row item-row-head ${extraCls}"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor original</span><span>Valor atual (R$)</span><span></span></div>` : '') + d.itensExtras.map((it,idx)=>`
     <div class="item-row ${extraCls}">
       <input type="text" value="${escapeHtml(it.descricao)}" data-action="report-extra-desc" data-idx="${idx}" placeholder="Descrição">
       ${apSelect('extra', idx, it.aparelhoId)}
       <input type="number" min="1" value="${it.qtd||1}" data-action="report-extra-qtd" data-idx="${idx}" title="Quantidade">
-      <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="report-extra-valor" data-idx="${idx}" title="Valor unitário (R$)">
+      <input type="text" inputmode="decimal" value="${it.valorOriginal>0? (+it.valorOriginal).toFixed(2).replace('.',',') : ''}" data-action="report-extra-orig" data-idx="${idx}" placeholder="Valor original" title="Valor original (R$) — opcional, aparece riscado no documento">
+      <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="report-extra-valor" data-idx="${idx}" placeholder="Valor atual" title="Valor atual unitário (R$)">
       <button class="icon-btn" data-action="report-extra-rm" data-idx="${idx}">${trashIcon}</button>
     </div>`).join('');
   const temItensOrcamento = d.itensPrevistos.length > 0;
@@ -2094,7 +2102,8 @@ function renderReportEditor(){
     </div>
     <div class="field-grid">
       <div class="field span2"><label>Descrição (item avulso, fora do catálogo)</label><input id="extra-desc"></div>
-      <div class="field"><label>Valor unitário (R$)</label><input id="extra-valor" type="text" inputmode="decimal"></div>
+      <div class="field"><label>Valor original (R$) <span style="font-weight:400;color:var(--ink-soft);">— opcional</span></label><input id="extra-orig" type="text" inputmode="decimal" placeholder="Era (ex.: 280,00)"></div>
+      <div class="field"><label>Valor atual (R$)</label><input id="extra-valor" type="text" inputmode="decimal" placeholder="Ficou (ex.: 260,00)"></div>
       <div class="field"><label>Quantidade</label><input id="extra-qtd" type="number" min="1" value="1"></div>
       <button class="btn" style="margin-top:22px;" data-action="report-add-extra">+ Adicionar</button>
     </div>
@@ -2597,7 +2606,7 @@ function printBudget(id){
   const b = STATE.budgets.find(x=>x.id===id); if(!b) return;
   const c = clientById(b.clienteId);
   const pctDesc = +((b.desc||{}).pct) || 0;
-  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${i.qtd>1?`<span class="doc-item-unit">${fmt(i.valor)} cada</span>`:''}${docPriceHtml(i.valor*i.qtd, pctDesc)}</span></div>`;
+  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${i.qtd>1?`<span class="doc-item-unit">${fmt(i.valor)} cada</span>`:''}${docPriceHtml(i.valor*i.qtd, pctDesc, (i.valorOriginal||0)*i.qtd)}</span></div>`;
   // cada item aparece embaixo do aparelho a que pertence (orçamentos antigos, sem essa ligação, saem como antes)
   const aps = b.aparelhos||[];
   const doAp = (a,i)=> !!a.id && i.aparelhoId===a.id;
@@ -2632,7 +2641,7 @@ function printReport(id){
   const c = clientById(r.clienteId);
   // Cada serviço aparece embaixo do aparelho a que pertence (relatórios antigos, sem essa ligação, saem como antes)
   const pctDesc = +((r.desc||{}).pct) || 0;
-  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${docPriceHtml(i.valor*(i.qtd||1), pctDesc)}</span></div>`;
+  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${docPriceHtml(i.valor*(i.qtd||1), pctDesc, i.checked!==undefined? (i.valorOriginal||0) : (i.valorOriginal||0)*(i.qtd||1))}</span></div>`;
   const todos = [...r.itensPrevistos.filter(i=>i.checked), ...r.itensExtras];
   const aps = r.aparelhos||[];
   const doAp = (a,i)=> !!a.id && i.aparelhoId===a.id;
@@ -3236,7 +3245,7 @@ document.addEventListener('click', async (e)=>{
     if(!desc){ toast('Preencha a descrição do item.'); return; }
     const qtdEl = document.getElementById('item-qtd-aberto');
     const qtd = Math.max(1, parseInt((qtdEl&&qtdEl.value)||1));
-    budgetDraft.itens.push({descricao:desc, valor:val, qtd, aparelhoId:reportAparelhoAtual(budgetDraft)}); render(); return;
+    budgetDraft.itens.push({descricao:desc, valor:val, qtd, aparelhoId:reportAparelhoAtual(budgetDraft), valorOriginal:(()=>{ const e=document.getElementById('item-orig-aberto'); const v=e? parseMoney(e.value) : 0; return v>val? v : 0; })()}); render(); return;
   }
   if(action==='budget-item-rm'){ budgetDraft.itens.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='desc-pct'){ const d=descDraftOf(btn.dataset.kind); descOf(d).pct = +btn.dataset.v; render(); return; }
@@ -3289,7 +3298,7 @@ document.addEventListener('click', async (e)=>{
     const pendDesc = document.getElementById('item-desc-aberto');
     if(pendDesc && pendDesc.value.trim()){
       const q = document.getElementById('item-qtd-aberto');
-      budgetDraft.itens.push({descricao:pendDesc.value.trim(), valor:parseMoney(document.getElementById('item-valor-aberto').value), qtd:Math.max(1, parseInt((q&&q.value)||1)), aparelhoId:reportAparelhoAtual(budgetDraft)});
+      budgetDraft.itens.push({descricao:pendDesc.value.trim(), valor:parseMoney(document.getElementById('item-valor-aberto').value), qtd:Math.max(1, parseInt((q&&q.value)||1)), aparelhoId:reportAparelhoAtual(budgetDraft), valorOriginal:(()=>{ const e=document.getElementById('item-orig-aberto'); const v=e? parseMoney(e.value) : 0; return v>parseMoney(document.getElementById('item-valor-aberto').value)? v : 0; })()});
     }
     delete budgetDraft.aparelhoAtual;
     const total = calcDesconto(budgetDraft, budgetDraft.itens.reduce((s,i)=>s+i.valor*i.qtd,0)).final;
@@ -3327,7 +3336,7 @@ document.addEventListener('click', async (e)=>{
     const val = parseMoney(document.getElementById('extra-valor').value);
     const qtd = Math.max(1, parseInt(document.getElementById('extra-qtd').value||1));
     if(!desc){ toast('Preencha a descrição do item.'); return; }
-    reportDraft.itensExtras.push({descricao:desc, valor:val, qtd, aparelhoId:reportAparelhoAtual(reportDraft)}); render(); return;
+    reportDraft.itensExtras.push({descricao:desc, valor:val, qtd, aparelhoId:reportAparelhoAtual(reportDraft), valorOriginal:(()=>{ const e=document.getElementById('extra-orig'); const v=e? parseMoney(e.value) : 0; return v>val? v : 0; })()}); render(); return;
   }
   if(action==='report-add-extra-catalogo'){
     const sel = document.getElementById('extra-catalogo');
@@ -3501,6 +3510,8 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
   if(el.dataset.action==='aparelho-edit-desc'){ const a=aparelhoListOf(el.dataset.kind)[+el.dataset.idx]; if(!a.descricao.trim()) a.descricao='Aparelho'; render(); return; }
   if(el.dataset.action==='aparelho-edit-qtd'){ aparelhoListOf(el.dataset.kind)[+el.dataset.idx].quantidade = Math.max(1, parseInt(el.value||1)); render(); return; }
+  if(el.dataset.action==='budget-item-orig'){ const v=parseMoney(el.value); budgetDraft.itens[+el.dataset.idx].valorOriginal = v>0? v : 0; render(); return; }
+  if(el.dataset.action==='report-extra-orig'){ const v=parseMoney(el.value); reportDraft.itensExtras[+el.dataset.idx].valorOriginal = v>0? v : 0; render(); return; }
   if(el.dataset.action==='desc-valor'){ descOf(descDraftOf(el.dataset.kind)).valor = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='desc-abate-ap'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].aparelhoId = el.value; render(); return; }
   if(el.dataset.action==='desc-abate-valor'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
