@@ -343,6 +343,8 @@ tr:hover td{background:var(--paper);}
 .doc-item b{font-weight:700;}
 .doc-item-prices{display:flex;align-items:baseline;gap:14px;flex:none;white-space:nowrap;}
 .doc-item-unit{color:#5B6B7D;font-size:12px;}
+.doc-item-old{color:#8A97A6;font-size:12.5px;text-decoration:line-through;}
+.doc-item-off{color:#1E8E5A;font-size:11.5px;font-weight:700;}
 .doc-item.doc-desc{color:#1E8E5A;}
 .doc-item.doc-sub{color:#5B6B7D;}
 .doc-total{display:flex;justify-content:space-between;font-size:17px;font-weight:700;padding:14px 0;border-top:2px solid #0F2A52;margin-top:6px;}
@@ -467,7 +469,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.33.3';
+const APP_VERSION = 'v1.34.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -500,6 +502,12 @@ function calcDesconto(d, subtotal){
   return {pct, pctValor, fixo, abates, totalDesc, final: Math.max(0, subtotal-totalDesc), tem: totalDesc>0};
 }
 // linhas de abatimento (material do cliente) de um aparelho — aparecem embaixo dele no documento
+// preço do item no documento: com % de desconto mostra o valor original riscado, o selo −X% e o valor com desconto ao lado
+function docPriceHtml(total, pct){
+  if(!(pct>0)) return `<b>${fmt(total)}</b>`;
+  const disc = Math.round(total*(100-pct))/100;
+  return `<span class="doc-item-old">${fmt(total)}</span><span class="doc-item-off">−${pct}%</span><b>${fmt(disc)}</b>`;
+}
 function descAbateRows(d, apId){
   return ((d.desc&&d.desc.abates)||[]).filter(a=>apId && a.aparelhoId===apId).map(a=>`<div class="doc-item doc-desc"><span>Material fornecido pelo cliente: ${(a.qtd||1)>1?(a.qtd||1)+'x ':''}${escapeHtml(a.descricao)}</span><b>− ${fmt((+a.valor||0)*(a.qtd||1))}</b></div>`).join('');
 }
@@ -2588,7 +2596,8 @@ async function downloadCurrentDoc(){
 function printBudget(id){
   const b = STATE.budgets.find(x=>x.id===id); if(!b) return;
   const c = clientById(b.clienteId);
-  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${i.qtd>1?`<span class="doc-item-unit">${fmt(i.valor)} cada</span>`:''}<b>${fmt(i.valor*i.qtd)}</b></span></div>`;
+  const pctDesc = +((b.desc||{}).pct) || 0;
+  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${i.qtd>1?`<span class="doc-item-unit">${fmt(i.valor)} cada</span>`:''}${docPriceHtml(i.valor*i.qtd, pctDesc)}</span></div>`;
   // cada item aparece embaixo do aparelho a que pertence (orçamentos antigos, sem essa ligação, saem como antes)
   const aps = b.aparelhos||[];
   const doAp = (a,i)=> !!a.id && i.aparelhoId===a.id;
@@ -2622,7 +2631,8 @@ function printReport(id){
   const r = STATE.serviceReports.find(x=>x.id===id); if(!r) return;
   const c = clientById(r.clienteId);
   // Cada serviço aparece embaixo do aparelho a que pertence (relatórios antigos, sem essa ligação, saem como antes)
-  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><b>${fmt(i.valor*(i.qtd||1))}</b></div>`;
+  const pctDesc = +((r.desc||{}).pct) || 0;
+  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${docPriceHtml(i.valor*(i.qtd||1), pctDesc)}</span></div>`;
   const todos = [...r.itensPrevistos.filter(i=>i.checked), ...r.itensExtras];
   const aps = r.aparelhos||[];
   const doAp = (a,i)=> !!a.id && i.aparelhoId===a.id;
