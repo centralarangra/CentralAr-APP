@@ -167,7 +167,7 @@ tr:hover td{background:var(--paper);}
 .search-input{width:100%;max-width:340px;padding:10px 13px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:16px;}
 .search-input:focus{outline:2px solid var(--navy-700);outline-offset:1px;}
 
-.overlay{position:fixed;inset:0;background:rgba(11,25,48,0.5);display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto;z-index:80;}
+.overlay{position:fixed;inset:0;background:rgba(11,25,48,0.5);display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto;z-index:350;}
 .overlay.show{display:flex;}
 .modal{background:var(--surface);border-radius:var(--radius-lg);padding:26px;width:100%;max-width:560px;box-shadow:0 24px 60px -20px rgba(0,0,0,0.4);}
 .modal h2{margin:0 0 16px;font-size:18px;}
@@ -231,7 +231,7 @@ tr:hover td{background:var(--paper);}
 .hidden{display:none !important;}
 .two-col{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;align-items:start;}
 @media(max-width:1000px){.two-col{grid-template-columns:1fr;}}
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy-900);color:#fff;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;box-shadow:0 12px 30px -8px rgba(0,0,0,0.4);z-index:200;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy-900);color:#fff;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;box-shadow:0 12px 30px -8px rgba(0,0,0,0.4);z-index:400;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
 
 /* editor / draft builder */
@@ -471,7 +471,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.35.0';
+const APP_VERSION = 'v1.36.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2575,6 +2575,70 @@ function buildStandaloneDoc(html, title){
     `<title>${escapeHtml(title||'Documento')}</title>${fontsLink}<style>${styleContent}\nhtml,body{overflow-x:auto !important;}\nbody{background:#fff;padding:20px 0;}\n${pageSizeCSS}</style></head>`+
     `<body><div class="doc-sheet">${html}</div></body></html>`;
 }
+/* ---- PDF sem bordas no celular ----
+   iPhone/Android ignoram o @page do documento e imprimem com margem grande. Por isso, no celular o botão Imprimir
+   monta o PDF do próprio documento (página com o tamanho exato do papel, sem margem) e abre Compartilhar/Imprimir. */
+const IS_TOUCH_DEVICE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints>1 && /Mac/i.test(navigator.platform||''));
+let lastPdf = null;
+function docSlug(){
+  const stripped = (currentPrintTitle||'documento').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]','g'),'');
+  return stripped.replace(/[^a-z0-9]+/g,'-').replace(/(^-+|-+$)/g,'') || 'documento';
+}
+function loadScriptOnce(src, isLoaded){
+  return new Promise((resolve,reject)=>{
+    if(isLoaded()) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = ()=> isLoaded()? resolve() : reject(new Error('lib sem retorno: '+src));
+    s.onerror = ()=> reject(new Error('falha ao carregar '+src));
+    document.head.appendChild(s);
+  });
+}
+async function buildDocPdf(){
+  await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', ()=>!!window.html2canvas);
+  await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', ()=>!!(window.jspdf && window.jspdf.jsPDF));
+  if(document.fonts && document.fonts.ready) await document.fonts.ready;
+  // monta uma cópia do papel fora da tela, sempre com 800px (sem zoom do celular)
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:absolute;left:-10000px;top:0;width:800px;background:#fff;';
+  stage.innerHTML = `<div class="doc-sheet" style="zoom:1;">${currentPrintHtml}</div>`;
+  document.body.appendChild(stage);
+  try{
+    const sheet = stage.firstElementChild;
+    await Promise.all([...sheet.querySelectorAll('img')].map(im=> im.complete? Promise.resolve() : new Promise(r=>{ im.onload = im.onerror = r; })));
+    await new Promise(r=>setTimeout(r,120));
+    const w = 800, h = Math.ceil(sheet.getBoundingClientRect().height);
+    const scale = Math.max(1.5, Math.min(3, Math.sqrt(14e6/(w*h)))); // limite de tamanho de imagem do iPhone
+    const canvas = await html2canvas(sheet, {scale, backgroundColor:'#ffffff', useCORS:true, logging:false, windowWidth:1000, scrollX:0, scrollY:0});
+    const wMM = 210, hMM = h*210/w;
+    const pdf = new window.jspdf.jsPDF({orientation: hMM>wMM? 'p' : 'l', unit:'mm', format:[wMM, hMM], compress:true});
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, wMM, hMM);
+    return pdf.output('blob');
+  } finally { stage.remove(); }
+}
+async function sharePdfFlow(btn){
+  const label = btn? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Gerando PDF...'; }
+  try{
+    const blob = await buildDocPdf();
+    if(lastPdf && lastPdf.url) URL.revokeObjectURL(lastPdf.url);
+    lastPdf = {blob, name: docSlug()+'.pdf', url: URL.createObjectURL(blob)};
+    openModal(`
+      <h2>PDF pronto</h2>
+      <p style="color:var(--ink-soft);font-size:14.5px;margin-top:-6px;">Sem bordas, igual ao do computador. Toque em <b>Compartilhar / Imprimir</b> e escolha <b>Imprimir</b> ou <b>Salvar em Arquivos</b>.</p>
+      <div class="modal-actions" style="flex-wrap:wrap;">
+        <button type="button" class="btn ghost" data-action="close-modal">Fechar</button>
+        <a class="btn" href="${lastPdf.url}" target="_blank" rel="noopener">Abrir PDF</a>
+        <button type="button" class="btn primary" data-action="pdf-share">Compartilhar / Imprimir</button>
+      </div>`);
+  }catch(e){
+    console.error(e);
+    toast('Não consegui gerar o PDF agora (precisa de internet). Tentando imprimir normal...');
+    try{ applyPrintPageSize(); window.print(); }catch(_){}
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = label; }
+  }
+}
 async function downloadCurrentDoc(){
   if(document.fonts && document.fonts.ready) await document.fonts.ready;
   const fullHtml = buildStandaloneDoc(currentPrintHtml, currentPrintTitle);
@@ -2641,7 +2705,7 @@ function printReport(id){
   const c = clientById(r.clienteId);
   // Cada serviço aparece embaixo do aparelho a que pertence (relatórios antigos, sem essa ligação, saem como antes)
   const pctDesc = +((r.desc||{}).pct) || 0;
-  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${docPriceHtml(i.valor*(i.qtd||1), pctDesc, i.checked!==undefined? (i.valorOriginal||0) : (i.valorOriginal||0)*(i.qtd||1))}</span></div>`;
+  const mkRow = i=>`<div class="doc-item"><span>${i.qtd>1?i.qtd+'x ':''}${escapeHtml(i.descricao)}</span><span class="doc-item-prices">${i.qtd>1?`<span class="doc-item-unit">${fmt(i.valor)} cada</span>`:''}${docPriceHtml(i.valor*(i.qtd||1), pctDesc, i.checked!==undefined? (i.valorOriginal||0) : (i.valorOriginal||0)*(i.qtd||1))}</span></div>`;
   const todos = [...r.itensPrevistos.filter(i=>i.checked), ...r.itensExtras];
   const aps = r.aparelhos||[];
   const doAp = (a,i)=> !!a.id && i.aparelhoId===a.id;
@@ -3068,6 +3132,16 @@ document.addEventListener('click', async (e)=>{
   if(action==='open-drawer'){ openDrawer(); return; }
   if(action==='close-drawer'){ closeDrawer(); return; }
   if(action==='close-print'){ const r=document.getElementById('print-root'); r.classList.remove('show'); r.innerHTML=''; return; }
+  if(action==='trigger-print' && IS_TOUCH_DEVICE){ await sharePdfFlow(btn); return; }
+  if(action==='pdf-share'){
+    if(!lastPdf) return;
+    const file = new File([lastPdf.blob], lastPdf.name, {type:'application/pdf'});
+    try{
+      if(navigator.canShare && navigator.canShare({files:[file]})) await navigator.share({files:[file], title: currentPrintTitle});
+      else window.open(lastPdf.url, '_blank');
+    }catch(e){ if(!(e && e.name==='AbortError')) window.open(lastPdf.url, '_blank'); }
+    return;
+  }
   if(action==='trigger-print'){ try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; applyPrintPageSize(); window.print(); }catch(e){ toast('Use o botão "Baixar arquivo" abaixo.'); } return; }
   if(action==='download-print'){ await downloadCurrentDoc(); return; }
   if(action==='set-sub'){ uiState[btn.dataset.group] = btn.dataset.v; render(); return; }
