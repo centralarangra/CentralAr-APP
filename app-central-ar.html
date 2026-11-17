@@ -472,7 +472,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.37.1';
+const APP_VERSION = 'v1.37.2';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -2783,7 +2783,10 @@ function printPhoto(id){
 
 /* --- Plano de Manutenção (contrato) --- */
 const PLANO_PERIODOS = ['Quinzenal','Mensal','Bimestral','Trimestral'];
-const PLANO_AVISO_PECAS = 'Peças não incluídas no plano — somente mão de obra.';
+const PLANO_AVISO_PECAS = 'Peças não inclusas.';
+const PLANO_AVISO_PECAS_ANTIGO = 'Peças não incluídas no plano — somente mão de obra.';
+// texto do aviso: plano sem o campo, ou salvo com a frase antiga, usa o texto atual
+function planoAviso(p){ const v = p.avisoPecas; return (v===undefined || v===PLANO_AVISO_PECAS_ANTIGO)? PLANO_AVISO_PECAS : v; }
 function newPlanoDraft(){
   return {
     clienteId:'', clienteNome:'', data:todayStr(),
@@ -2871,7 +2874,7 @@ function renderPlanoEditor(){
         <select data-live-input="plano-periodo"><option value="">— nenhuma —</option>${PLANO_PERIODOS.map(p=>`<option ${p===d.periodicidade?'selected':''}>${p}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Valor mensal (R$)</label><input type="text" inputmode="decimal" data-live-input="plano-valor" value="${escapeHtml(d.valorMensal)}" placeholder="0,00"></div>
-      <div class="field span2"><label>Aviso abaixo do valor <span style="font-weight:400;color:var(--ink-soft);">— apague o texto se não quiser mostrar</span></label><input data-live-input="plano-aviso-pecas" value="${escapeHtml(d.avisoPecas===undefined? PLANO_AVISO_PECAS : d.avisoPecas)}"></div>
+      <div class="field span2"><label>Aviso abaixo do valor <span style="font-weight:400;color:var(--ink-soft);">— apague o texto se não quiser mostrar</span></label><input data-live-input="plano-aviso-pecas" value="${escapeHtml(planoAviso(d))}"></div>
     </div>
     <div class="section-title">Formas de pagamento e observações</div>
     ${planoSecEditorHtml('secoesFim', d.secoesFim)}
@@ -2903,7 +2906,7 @@ function printPlano(id){
       <div class="doc-plano-h">${escapeHtml(p.tituloPlano||'')}</div>
       <div class="doc-plano-item" style="margin-bottom:6px;">Periodicidade: ${periodos}</div>
       <div class="doc-plano-item">Valor mensal: <b>${p.valorMensal? fmt(parseMoney(p.valorMensal)) : 'R$ ______'}</b></div>
-      ${(p.avisoPecas===undefined? PLANO_AVISO_PECAS : p.avisoPecas)? `<div class="doc-plano-item" style="margin-top:4px;"><b>${escapeHtml(p.avisoPecas===undefined? PLANO_AVISO_PECAS : p.avisoPecas)}</b></div>` : ''}
+      ${planoAviso(p)? `<div class="doc-plano-item" style="margin-top:4px;"><b>${escapeHtml(planoAviso(p))}</b></div>` : ''}
       <div style="height:10px;"></div>
       ${(p.secoesFim||[]).map(planoSecPrintHtml).join('')}
     </div>
