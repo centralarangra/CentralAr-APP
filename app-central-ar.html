@@ -240,6 +240,7 @@ tr:hover td{background:var(--paper);}
 .item-row:last-child{border-bottom:none;}
 .item-row.cols-x{grid-template-columns:1fr 80px 130px 32px;}
 .item-row.cols-ap{grid-template-columns:1fr 90px 32px;}
+.item-row.cols-apc{grid-template-columns:1fr 170px 90px 32px;}
 .item-row.cols-xo{grid-template-columns:1fr 80px 125px 125px 32px;}
 .item-row.cols-xao{grid-template-columns:1fr 230px 80px 125px 125px 32px;}
 .item-row.cols-xa{grid-template-columns:1fr 230px 80px 130px 32px;}
@@ -293,7 +294,7 @@ tr:hover td{background:var(--paper);}
   .hero-band{padding:24px 20px 52px;}
   .field-grid{grid-template-columns:1fr;}
   .item-row-head{display:none;}
-  .item-row, .item-row.cols-x, .item-row.cols-xa, .item-row.cols-ap, .item-row.cols-xo, .item-row.cols-xao{grid-template-columns:1fr;gap:6px;padding:12px 0;}
+  .item-row, .item-row.cols-x, .item-row.cols-xa, .item-row.cols-ap, .item-row.cols-apc, .item-row.cols-xo, .item-row.cols-xao{grid-template-columns:1fr;gap:6px;padding:12px 0;}
   .item-row > *{width:100%;}
   /* o documento impresso (orçamento/relatório/checklist) NUNCA muda de layout por causa do tamanho da tela —
      tem que sair sempre igual, seja no celular ou no PC. No celular, o usuário arrasta/dá zoom pra ver tudo. */
@@ -471,7 +472,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.36.0';
+const APP_VERSION = 'v1.37.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -490,7 +491,7 @@ const CONDICOES_ORDEM = ['Pix','Dinheiro','Cartão','Boleto'];
 // Junta opções de pagamento em português correto: "Pix, Cartão ou Boleto" (vírgula entre elas, "ou" só antes da última)
 /* Desconto compartilhado (Orçamento, Serviço realizado, Fotográfico): d.desc = {pct, valor, abates:[{descricao,valor,qtd}]}
    pct = 5/10 % sobre o subtotal; valor = desconto fixo em R$; abates = material/produto que o cliente fornece (valor abatido do total) */
-function aparelhoListOf(k){ return (k==='budget'? budgetDraft : k==='laudo'? laudoDraft : reportDraft).aparelhos; }
+function aparelhoListOf(k){ return (k==='budget'? budgetDraft : k==='laudo'? laudoDraft : k==='plano'? planoDraft : reportDraft).aparelhos; }
 function descDraftOf(k){ return k==='budget'? budgetDraft : k==='photo'? photoDraft : reportDraft; }
 function descOf(d){ d.desc = d.desc || {pct:0, valor:0, abates:[]}; d.desc.abates = d.desc.abates || []; return d.desc; }
 function calcDesconto(d, subtotal){
@@ -2791,6 +2792,7 @@ function newPlanoDraft(){
       {titulo:'BENEFÍCIOS PARA SUA EMPRESA:', itens:'Redução no consumo de energia\nAumento da vida útil dos equipamentos\nMenor risco de falhas e prejuízos\nAmbiente mais saudável e livre de impurezas\nAtendimento prioritário para clientes com contrato'},
       {titulo:'DIFERENCIAIS DA CENTRAL AR ANGRA:', itens:'Equipe técnica qualificada\nAtendimento rápido e eficiente\nTransparência nos serviços prestados\nExperiência no mercado de refrigeração há mais de 12 anos\nSuporte técnico especializado'}
     ],
+    aparelhos:[],
     tituloPlano:'PLANO DE MANUTENÇÃO', periodicidade:'Quinzenal', valorMensal:'',
     secoesFim:[
       {titulo:'FORMAS DE PAGAMENTO:', itens:'PIX\nTransferência\nBoleto'},
@@ -2830,7 +2832,15 @@ function planoSecEditorHtml(list, arr){
 }
 function renderPlanoEditor(){
   const d = planoDraft;
-  d.secoes = d.secoes||[]; d.secoesFim = d.secoesFim||[];
+  d.secoes = d.secoes||[]; d.secoesFim = d.secoesFim||[]; d.aparelhos = d.aparelhos||[];
+  const aparelhoRows = d.aparelhos.map((a,idx)=>`
+    <div class="item-row cols-apc">
+      <input type="text" value="${escapeHtml(a.descricao)}" data-action="aparelho-edit-desc" data-kind="plano" data-idx="${idx}" placeholder="Aparelho (ex.: Split Hi-Wall)">
+      <input type="text" value="${escapeHtml(a.capacidade||'')}" data-action="aparelho-edit-cap" data-kind="plano" data-idx="${idx}" placeholder="Capacidade (ex.: 12.000 BTUs)">
+      <input type="number" min="1" value="${a.quantidade}" data-action="aparelho-edit-qtd" data-kind="plano" data-idx="${idx}" title="Quantidade">
+      <button class="icon-btn" data-action="plano-aparelho-rm" data-idx="${idx}">${trashIcon}</button>
+    </div>`).join('');
+  const totalAp = d.aparelhos.reduce((s,a)=>s+(+a.quantidade||0),0);
   return `
   <div class="editor-card">
     <div class="section-title" style="margin-top:0;">${d.id? 'Editando plano de manutenção' : 'Novo plano de manutenção'}</div>
@@ -2842,6 +2852,14 @@ function renderPlanoEditor(){
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-plano" type="date" data-live-input="plano-data" value="${d.data}">${dateIconBtn('date-plano')}</div></div>
       <div class="field span2"><label>Título do documento</label><input data-live-input="plano-titulo" value="${escapeHtml(d.titulo)}"></div>
     </div>
+    <div class="section-title">Aparelhos do plano <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— quais são e quantos de cada capacidade</span></div>
+    <div class="field-grid">
+      <div class="field span2"><label>Aparelho</label><input id="plano-ap-desc" placeholder="Ex: Split Hi-Wall"></div>
+      <div class="field"><label>Capacidade</label><input id="plano-ap-cap" placeholder="Ex: 12.000 BTUs"></div>
+      <div class="field"><label>Quantidade</label><input id="plano-ap-qtd" type="number" min="1" value="1"></div>
+      <button class="btn" style="margin-top:22px;" data-action="plano-add-aparelho">+ Adicionar</button>
+    </div>
+    ${aparelhoRows? `<div style="margin-top:6px;">${aparelhoRows}</div><div style="color:var(--ink-soft);font-size:13px;margin-top:6px;">Total: <b>${totalAp}</b> aparelho(s)</div>` : ''}
     <div class="section-title">Seções do plano</div>
     ${planoSecEditorHtml('secoes', d.secoes)}
     <button class="btn" data-action="plano-sec-add" data-list="secoes">+ Adicionar seção</button>
@@ -2870,12 +2888,16 @@ function printPlano(id){
   const p = STATE.planos.find(x=>x.id===id); if(!p) return;
   const c = clientById(p.clienteId);
   const nome = c?.nome || p.clienteNome || '';
+  const apsP = p.aparelhos||[];
+  const totalApP = apsP.reduce((s,a)=>s+(+a.quantidade||0),0);
+  const aparelhosHtml = apsP.length? `<div><div class="doc-plano-h">APARELHOS INCLUSOS NO PLANO:</div>${apsP.map(a=>`<div class="doc-plano-item">✔ ${a.quantidade}x ${escapeHtml(a.descricao)}${a.capacidade? ' — <b>'+escapeHtml(a.capacidade)+'</b>' : ''}</div>`).join('')}<div class="doc-plano-item" style="margin-top:4px;"><b>Total: ${totalApP} aparelho${totalApP>1?'s':''}</b></div></div>` : '';
   const periodos = PLANO_PERIODOS.map(x=>`(${x===p.periodicidade?' <b>X</b> ':' '}) ${x}`).join(' &nbsp;');
   printNow(`
     ${docHead(p.titulo||'PLANO DE MANUTENÇÃO')}
     <div class="doc-body">
       ${nome? `<div class="doc-meta"><div><b>Cliente</b>${escapeHtml(nome)}</div><div><b>Data</b>${formatDateBR(p.data)}</div></div>` : ''}
       ${(p.secoes||[]).map(planoSecPrintHtml).join('')}
+      ${aparelhosHtml}
       <div class="doc-plano-h">${escapeHtml(p.tituloPlano||'')}</div>
       <div class="doc-plano-item" style="margin-bottom:6px;">Periodicidade: ${periodos}</div>
       <div class="doc-plano-item">Valor mensal: <b>${p.valorMensal? fmt(parseMoney(p.valorMensal)) : 'R$ ______'}</b></div>
@@ -3517,7 +3539,21 @@ document.addEventListener('click', async (e)=>{
   if(action==='cancel-plano'){ planoDraft=null; editingDraft=false; render(); return; }
   if(action==='plano-sec-add'){ planoDraft[btn.dataset.list].push({titulo:'', itens:''}); render(); return; }
   if(action==='plano-sec-rm'){ planoDraft[btn.dataset.list].splice(+btn.dataset.idx,1); render(); return; }
+  if(action==='plano-add-aparelho'){
+    const desc = document.getElementById('plano-ap-desc').value.trim();
+    const cap = document.getElementById('plano-ap-cap').value.trim();
+    const qtd = Math.max(1, parseInt(document.getElementById('plano-ap-qtd').value||1));
+    if(!desc && !cap){ toast('Escreva o aparelho ou a capacidade.'); return; }
+    planoDraft.aparelhos = planoDraft.aparelhos||[];
+    planoDraft.aparelhos.push({id:uid(), descricao:desc||'Aparelho', capacidade:cap, quantidade:qtd}); render(); return;
+  }
+  if(action==='plano-aparelho-rm'){ planoDraft.aparelhos.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='save-plano'){
+    const pdesc = document.getElementById('plano-ap-desc'), pcap = document.getElementById('plano-ap-cap');
+    if((pdesc && pdesc.value.trim()) || (pcap && pcap.value.trim())){
+      planoDraft.aparelhos = planoDraft.aparelhos||[];
+      planoDraft.aparelhos.push({id:uid(), descricao:(pdesc.value.trim()||'Aparelho'), capacidade:(pcap? pcap.value.trim() : ''), quantidade:Math.max(1, parseInt(document.getElementById('plano-ap-qtd').value||1))});
+    }
     const {id, ...data} = planoDraft;
     if(id) await db.collection('planos').doc(id).update(data);
     else await db.collection('planos').add(data);
@@ -3674,6 +3710,7 @@ document.addEventListener('input', (e)=>{
   if(el.dataset.action==='photo-legenda'){ photoDraft.fotos[+el.dataset.idx].legenda = el.value; return; }
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='aparelho-edit-desc'){ aparelhoListOf(el.dataset.kind)[+el.dataset.idx].descricao = el.value; return; }
+  if(el.dataset.action==='aparelho-edit-cap'){ aparelhoListOf(el.dataset.kind)[+el.dataset.idx].capacidade = el.value; return; }
   if(el.dataset.action==='report-extra-desc'){ reportDraft.itensExtras[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='photo-serv-edit-desc'){ const i=+el.dataset.idx; const s=photoServ(photoDraft.servicosTexto[i]); s.descricao = el.value; photoDraft.servicosTexto[i] = s; return; }
   if(el.dataset.liveInput==='sale-cliente-nome'){ saleDraft.clienteNome = el.value; return; }
