@@ -472,9 +472,9 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.37.2';
+const APP_VERSION = 'v1.38.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
-const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaView:'semana', agendaWeekStart:null};
+const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaTab:'agendados', agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
 let downloadsApi = null;
 async function initDownloads(){
@@ -1666,32 +1666,68 @@ function apptMsgLembrete(a){
 }
 
 function renderAgenda(){
-  const body = uiState.agendaView==='semana' ? renderAgendaWeek() : renderAgendaList();
+  // duas abas separadas: o que está agendado e o que já foi executado (status "Concluído")
+  const executados = uiState.agendaTab==='executados';
+  const nExec = STATE.appointments.filter(a=>a.status==='Concluído').length;
+  const nAbertos = STATE.appointments.filter(a=>a.status!=='Concluído' && a.status!=='Cancelado').length;
+  const body = executados ? renderAgendaDone() : (uiState.agendaView==='semana' ? renderAgendaWeek() : renderAgendaList());
+  const sub = executados? 'Serviços já concluídos, do mais recente para o mais antigo.' : (uiState.agendaView==='semana'? 'Clique num horário livre na grade para agendar.' : 'Agendamentos de serviço, com mensagens prontas para o cliente.');
   return `
   <div class="page-head">
-    <div><h1>▤ Agenda</h1><p>${uiState.agendaView==='semana'? 'Clique num horário livre na grade para agendar.' : 'Agendamentos de serviço, com mensagens prontas para o cliente.'}</p></div>
-    ${uiState.agendaView==='lista'? `<button class="btn primary" data-action="new-appt">+ Novo agendamento</button>` : ''}
+    <div><h1>▤ Agenda</h1><p>${sub}</p></div>
+    ${!executados && uiState.agendaView==='lista'? `<button class="btn primary" data-action="new-appt">+ Novo agendamento</button>` : ''}
   </div>
-  <div style="font-size:12px;color:var(--ink-soft);margin:-8px 0 14px;">${SYNC_CONFIG.calendarScope? '🟢 Sincronizado automaticamente com a Google Agenda (nos dois sentidos) — os itens com 📅 vieram de lá. Sincronizar na hora: Configurações → Sincronização.' : '⚪ Google Agenda não conectada. Ative em Configurações → Sincronização.'}</div>
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+  <div class="tab-toggle" style="margin-bottom:14px;flex-wrap:wrap;">
+    <button data-action="agenda-tab" data-v="agendados" class="${!executados?'active':''}">📅 Agendamentos (${nAbertos})</button>
+    <button data-action="agenda-tab" data-v="executados" class="${executados?'active':''}">✅ Executados (${nExec})</button>
+  </div>
+  <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 14px;">${SYNC_CONFIG.calendarScope? '🟢 Sincronizado automaticamente com a Google Agenda (nos dois sentidos) — os itens com 📅 vieram de lá. Sincronizar na hora: Configurações → Sincronização.' : '⚪ Google Agenda não conectada. Ative em Configurações → Sincronização.'}</div>
+  ${executados? '' : `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
     <div class="tab-toggle">
       <button data-action="agenda-view" data-v="semana" class="${uiState.agendaView==='semana'?'active':''}">🗓 Semana</button>
       <button data-action="agenda-view" data-v="lista" class="${uiState.agendaView==='lista'?'active':''}">☰ Lista</button>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);">
-      <input type="checkbox" data-action="toggle-past" ${uiState.agendaShowPast?'checked':''}> Mostrar concluídos e cancelados
+      <input type="checkbox" data-action="toggle-past" ${uiState.agendaShowPast?'checked':''}> Mostrar cancelados
     </label>
-  </div>
+  </div>`}
   ${body}`;
 }
 
-function renderAgendaList(){
-  const today = todayStr();
-  let list = STATE.appointments.slice().sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
-  if(!uiState.agendaShowPast) list = list.filter(a=>a.data>=today || (a.status!=='Concluído' && a.status!=='Cancelado'));
+function renderAgendaDone(){
+  const list = STATE.appointments.filter(a=>a.status==='Concluído').sort((a,b)=>((b.data||'')+(b.hora||'')).localeCompare((a.data||'')+(a.hora||'')));
   const rows = list.map(a=>`<tr>
-    <td data-label="Data/Hora"><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}${a.horaFim?' – '+a.horaFim:''}</span></td>
-    <td data-label="Cliente"><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</td>
+    <td data-label="Data/Hora"><div><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}${a.horaFim?' – '+a.horaFim:''}</span></div></td>
+    <td data-label="Cliente"><div><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</div></td>
+    <td data-label="Serviço">${escapeHtml(a.servicoDescricao||'—')}</td>
+    <td data-label="Status">
+      <select data-action="appt-status" data-id="${a.id}" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:16px;">
+        ${['Agendado','Confirmado','Concluído','Cancelado'].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </td>
+    <td><div class="row-actions">
+      <button class="icon-btn" data-action="edit-appt" data-id="${a.id}" title="Editar">${editIcon}</button>
+      <button class="icon-btn" data-action="delete-appt" data-id="${a.id}">${trashIcon}</button>
+    </div></td>
+  </tr>`).join('');
+  return `
+  <div class="table-wrap">
+    ${list.length? `<table><thead><tr><th>Data / Hora</th><th>Cliente</th><th>Serviço</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<div class="empty-state"><div class="display">Nenhum serviço executado ainda</div>Quando terminar um serviço, mude o status dele para "Concluído" e ele aparece aqui.</div>`}
+  </div>`;
+}
+// avisa pra onde o agendamento foi, pra não parecer que sumiu
+function toastMudancaAba(antes, depois){
+  if(depois==='Concluído' && antes!=='Concluído') toast('✅ Movido para a aba Executados');
+  else if(antes==='Concluído' && depois!=='Concluído') toast('Voltou para a aba Agendamentos');
+}
+
+function renderAgendaList(){
+  let list = STATE.appointments.filter(a=>a.status!=='Concluído').sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
+  if(!uiState.agendaShowPast) list = list.filter(a=>a.status!=='Cancelado');
+  const rows = list.map(a=>`<tr>
+    <td data-label="Data/Hora"><div><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}${a.horaFim?' – '+a.horaFim:''}</span></div></td>
+    <td data-label="Cliente"><div><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</div></td>
     <td data-label="Serviço">${escapeHtml(a.servicoDescricao||'—')}</td>
     <td data-label="Status">
       <select data-action="appt-status" data-id="${a.id}" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:16px;">
@@ -1725,8 +1761,8 @@ function renderAgendaWeek(){
   const startHour=6, endHour=21, pxPerHour=56;
   const hours = []; for(let h=startHour; h<endHour; h++) hours.push(h);
   const today = todayStr();
-  let list = STATE.appointments.filter(a=> days.includes(a.data));
-  if(!uiState.agendaShowPast) list = list.filter(a=> a.status!=='Concluído' && a.status!=='Cancelado');
+  let list = STATE.appointments.filter(a=> days.includes(a.data) && a.status!=='Concluído');
+  if(!uiState.agendaShowPast) list = list.filter(a=> a.status!=='Cancelado');
 
   const header = days.map((d,i)=>{
     const dt = new Date(d+'T00:00:00');
@@ -1830,11 +1866,13 @@ async function handleApptForm(form){
     cor: fd.get('cor')||APPT_COLORS[0]
   };
   let savedId = id;
+  const statusAntes = id? (STATE.appointments.find(x=>x.id===id)||{}).status : '';
   if(id) await db.collection('appointments').doc(id).update(data);
   else { const ref = await db.collection('appointments').add(data); savedId = ref.id; }
   closeModal();
   const saved = STATE.appointments.find(x=>x.id===savedId);
   pushApptToCalendar(saved || {...data, id:savedId});
+  toastMudancaAba(statusAntes, data.status);
 }
 
 /* ============================================================
@@ -2613,9 +2651,14 @@ async function buildDocPdf(){
     const canvas = await html2canvas(sheet, {scale, backgroundColor:'#ffffff', useCORS:true, logging:false, windowWidth:1000, scrollX:0, scrollY:0});
     const wMM = 210, hMM = h*210/w;
     const pdf = new window.jspdf.jsPDF({orientation: hMM>wMM? 'p' : 'l', unit:'mm', format:[wMM, hMM], compress:true});
+    pdf.setProperties({title: currentPrintTitle});
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, wMM, hMM);
     return pdf.output('blob');
   } finally { stage.remove(); }
+}
+function downloadLastPdf(){
+  const a = document.createElement('a'); a.href = lastPdf.url; a.download = lastPdf.name;
+  document.body.appendChild(a); a.click(); a.remove();
 }
 async function sharePdfFlow(btn){
   const label = btn? btn.textContent : '';
@@ -2623,13 +2666,13 @@ async function sharePdfFlow(btn){
   try{
     const blob = await buildDocPdf();
     if(lastPdf && lastPdf.url) URL.revokeObjectURL(lastPdf.url);
-    lastPdf = {blob, name: docSlug()+'.pdf', url: URL.createObjectURL(blob)};
+    lastPdf = {blob, name: (currentPrintTitle||'Documento').replace(/[\/:*?"<>|]+/g,' ').trim()+'.pdf', url: URL.createObjectURL(blob)};
     openModal(`
       <h2>PDF pronto</h2>
       <p style="color:var(--ink-soft);font-size:14.5px;margin-top:-6px;">Sem bordas, igual ao do computador. Toque em <b>Compartilhar / Imprimir</b> e escolha <b>Imprimir</b> ou <b>Salvar em Arquivos</b>.</p>
       <div class="modal-actions" style="flex-wrap:wrap;">
         <button type="button" class="btn ghost" data-action="close-modal">Fechar</button>
-        <a class="btn" href="${lastPdf.url}" target="_blank" rel="noopener">Abrir PDF</a>
+        <a class="btn" href="${lastPdf.url}" download="${escapeHtml(lastPdf.name)}">Baixar PDF</a>
         <button type="button" class="btn primary" data-action="pdf-share">Compartilhar / Imprimir</button>
       </div>`);
   }catch(e){
@@ -2699,7 +2742,7 @@ function printBudget(id){
       ${b.obs? `<div class="doc-obs">${escapeHtml(b.obs)}</div>`:''}
       <div class="doc-obs">Garantia de ${EMPRESA.garantiaDias} dias sobre o serviço realizado, contados a partir da conclusão.</div>
     </div>
-    ${docFoot()}`, `Orçamento nº ${b.numero||''}`);
+    ${docFoot()}`, 'Orçamento');
 }
 function printReport(id){
   const r = STATE.serviceReports.find(x=>x.id===id); if(!r) return;
@@ -3165,13 +3208,14 @@ document.addEventListener('click', async (e)=>{
     if(!lastPdf) return;
     const file = new File([lastPdf.blob], lastPdf.name, {type:'application/pdf'});
     try{
-      if(navigator.canShare && navigator.canShare({files:[file]})) await navigator.share({files:[file], title: currentPrintTitle});
-      else window.open(lastPdf.url, '_blank');
-    }catch(e){ if(!(e && e.name==='AbortError')) window.open(lastPdf.url, '_blank'); }
+      // só o arquivo: sem título/texto junto (o WhatsApp colava o nome como mensagem)
+      if(navigator.canShare && navigator.canShare({files:[file]})) await navigator.share({files:[file]});
+      else downloadLastPdf();
+    }catch(e){ if(!(e && e.name==='AbortError')) downloadLastPdf(); }
     return;
   }
   if(action==='trigger-print'){ try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; applyPrintPageSize(); window.print(); }catch(e){ toast('Use o botão "Baixar arquivo" abaixo.'); } return; }
-  if(action==='download-print'){ await downloadCurrentDoc(); return; }
+  if(action==='download-print'){ if(IS_TOUCH_DEVICE) await sharePdfFlow(btn); else await downloadCurrentDoc(); return; }
   if(action==='set-sub'){ uiState[btn.dataset.group] = btn.dataset.v; render(); return; }
   if(action==='close-modal'){ closeModal(); return; }
   if(action==='toggle-theme'){ applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'); return; }
@@ -3311,6 +3355,7 @@ document.addEventListener('click', async (e)=>{
   if(action==='copy-lembrete'){ const a = STATE.appointments.find(x=>x.id===btn.dataset.id); copyText(apptMsgLembrete(a)); return; }
   if(action==='toggle-past'){ uiState.agendaShowPast = !uiState.agendaShowPast; render(); return; }
   if(action==='agenda-view'){ uiState.agendaView = btn.dataset.v; render(); return; }
+  if(action==='agenda-tab'){ uiState.agendaTab = btn.dataset.v; render(); return; }
   if(action==='agenda-week-prev'){ const d=new Date(uiState.agendaWeekStart+'T00:00:00'); d.setDate(d.getDate()-7); uiState.agendaWeekStart=todayStr(d); render(); return; }
   if(action==='agenda-week-next'){ const d=new Date(uiState.agendaWeekStart+'T00:00:00'); d.setDate(d.getDate()+7); uiState.agendaWeekStart=todayStr(d); render(); return; }
   if(action==='agenda-week-today'){ uiState.agendaWeekStart = startOfWeekStr(todayStr()); render(); return; }
@@ -3620,7 +3665,7 @@ document.addEventListener('change', async (e)=>{
     return;
   }
   if(el.dataset.action==='fin-month'){ uiState.finMonth = el.value; render(); return; }
-  if(el.dataset.action==='appt-status'){ const id=el.dataset.id; await db.collection('appointments').doc(id).update({status:el.value}); const appt=STATE.appointments.find(x=>x.id===id); if(appt) pushApptToCalendar(appt); return; }
+  if(el.dataset.action==='appt-status'){ const id=el.dataset.id, novo=el.value; const antes=(STATE.appointments.find(x=>x.id===id)||{}).status; await db.collection('appointments').doc(id).update({status:novo}); const appt=STATE.appointments.find(x=>x.id===id); if(appt) pushApptToCalendar(appt); toastMudancaAba(antes, novo); return; }
   if(el.dataset.action==='budget-status'){ await db.collection('budgets').doc(el.dataset.id).update({status:el.value}); return; }
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
   if(el.dataset.action==='budget-item-qtd'){ budgetDraft.itens[+el.dataset.idx].qtd = Math.max(1, parseInt(el.value||1)); render(); return; }
