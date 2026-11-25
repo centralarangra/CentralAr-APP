@@ -350,6 +350,18 @@ tr:hover td{background:var(--paper);}
 .semana-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin:14px 4px 6px;}
 @media(min-width:881px){ .mes-box table{table-layout:fixed;} .mes-box td{overflow-wrap:anywhere;} }
 
+/* lembretes de manutenção preventiva */
+.prev-item{border:1px solid var(--line);border-left:4px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:13.5px;}
+.prev-item.atrasada{border-left-color:var(--danger);}
+.prev-item.perto{border-left-color:#C97A1E;}
+.prev-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.prev-quando{font-weight:700;text-align:right;}
+.prev-item.atrasada .prev-sit{color:var(--danger);}
+.prev-item.perto .prev-sit{color:#C97A1E;}
+.prev-sit{font-size:12px;font-weight:600;color:var(--ink-soft);}
+.prev-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;}
+.prev-acoes a.btn{text-decoration:none;}
+
 /* print documents */
 #print-root{display:none;}
 #print-root.show{display:block;position:fixed;inset:0;background:#EAEDF1;z-index:300;overflow-y:auto;padding:18px 0 60px;}
@@ -507,8 +519,8 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.40.0';
-const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
+const APP_VERSION = 'v1.41.0';
+const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[],preventivas:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, det:{}, agendaTab:'agendados', agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
 let downloadsApi = null;
@@ -802,7 +814,7 @@ function createLocalDb(){
   return { doc:(p)=>{ const parts=p.split('/'); const id=parts.pop(); return makeDocRef(parts.join('/'),id); }, collection:(p)=>makeCollRef(p) };
 }
 
-const COLLECTIONS = ['clients','services','products','materials','employees','categories','transactions','sales','appointments','budgets','serviceReports','checklists','photoReports','fixedExpenses','laudos','planos'];
+const COLLECTIONS = ['clients','services','products','materials','employees','categories','transactions','sales','appointments','budgets','serviceReports','checklists','photoReports','fixedExpenses','laudos','planos','preventivas'];
 let unsubscribers = [];
 function subscribeAll(){
   unsubscribers.forEach(u=>{ try{ u(); }catch(e){} });
@@ -1073,6 +1085,152 @@ function apptReminders(a){
   if(!Array.isArray(a.lembretes) && a.origem==='google') return null;
   return {useDefault:false, overrides: apptLembretes(a).map(m=>({method:'popup', minutes:m}))};
 }
+/* ============================================================
+   MANUTENÇÃO PREVENTIVA — lembrar de avisar o cliente na data certa
+============================================================ */
+const PREV_MESES = [1,3,6,12];
+function textoMeses(n){ return n===1? '1 mês' : `${n} meses`; }
+function addMesesStr(dataStr, n){
+  const [y,m,d] = (dataStr||todayStr()).split('-').map(Number);
+  const ultimoDia = new Date(y, m-1+n+1, 0).getDate();
+  return todayStr(new Date(y, m-1+n, Math.min(d, ultimoDia)));
+}
+function prevNome(p){ return clientName(p.clienteId) || p.clienteNome || 'Cliente'; }
+function prevTelefone(p){ return p.telefone || (clientById(p.clienteId)||{}).telefone || ''; }
+function prevMensagem(p){
+  return `Olá, ${prevNome(p)}! Tudo bem? Aqui é da ${EMPRESA.nome}. Está chegando a data da manutenção preventiva do seu ar-condicionado${p.dataServico? ' (último serviço em '+formatDateBR(p.dataServico)+')' : ''}. Podemos agendar um horário?`;
+}
+function whatsLink(p){
+  let d = prevTelefone(p).replace(/\D/g,'');
+  if(!d) return '';
+  if(d.length<=11) d = '55'+d;
+  return `https://wa.me/${d}?text=${encodeURIComponent(prevMensagem(p))}`;
+}
+function prevPendentes(){ return STATE.preventivas.filter(p=>p.status!=='avisado').sort((a,b)=>(a.proxima||'').localeCompare(b.proxima||'')); }
+function prevParaAvisar(){ const h=todayStr(); return prevPendentes().filter(p=>p.proxima && p.proxima<=h); }
+function prevDias(p){ return Math.round((new Date(p.proxima+'T00:00:00') - new Date(todayStr()+'T00:00:00'))/86400000); }
+function prevItemHtml(p){
+  const avisado = p.status==='avisado', dias = prevDias(p);
+  const cls = avisado? '' : dias<=0? 'atrasada' : dias<=15? 'perto' : '';
+  const sit = avisado? `✔ Avisado em ${formatDateBR(p.avisadoEm)}` : dias<0? `Atrasado há ${-dias} dia${dias<-1?'s':''}` : dias===0? 'É HOJE' : `Faltam ${dias} dia${dias>1?'s':''}`;
+  const link = whatsLink(p);
+  const acoes = avisado
+    ? `<button class="btn small" data-action="prev-denovo" data-id="${p.id}">🔁 Lembrar de novo em ${textoMeses(p.meses||6)}</button>`
+    : `${link? `<a class="btn small primary" href="${link}" target="_blank" rel="noopener">📲 Avisar no WhatsApp</a>` : `<span style="color:var(--danger);font-size:12px;">Sem telefone: toque no lápis para colocar</span>`}
+       <button class="btn small" data-action="prev-copy" data-id="${p.id}">Copiar mensagem</button>
+       <button class="btn small" data-action="prev-avisado" data-id="${p.id}">✔ Já avisei</button>
+       <button class="btn small" data-action="prev-agendar" data-id="${p.id}">📅 Agendar</button>`;
+  return `<div class="prev-item ${cls}">
+    <div class="prev-top">
+      <div><b>${escapeHtml(prevNome(p))}</b>${prevTelefone(p)? ` · ${escapeHtml(formatPhoneBR(prevTelefone(p)))}` : ''}<div style="color:var(--ink-soft);">${escapeHtml(p.servico||'Manutenção preventiva')}${p.dataServico? ` · último serviço ${formatDateBR(p.dataServico)}` : ''}</div>${p.obs? `<div style="color:var(--ink-soft);">${escapeHtml(p.obs)}</div>` : ''}</div>
+      <div class="prev-quando">${formatDateBR(p.proxima)}<div class="prev-sit">${sit}</div></div>
+    </div>
+    <div class="prev-acoes">${acoes}
+      <button class="icon-btn" data-action="prev-edit" data-id="${p.id}" title="Editar">${editIcon}</button>
+      <button class="icon-btn" data-action="prev-delete" data-id="${p.id}" title="Apagar">${trashIcon}</button>
+    </div>
+  </div>`;
+}
+function renderPreventivas(){
+  const pend = prevPendentes();
+  const avisados = STATE.preventivas.filter(p=>p.status==='avisado').sort((a,b)=>(b.avisadoEm||'').localeCompare(a.avisadoEm||''));
+  return `
+  <div class="head-actions" style="margin-bottom:14px;"><button class="btn primary" data-action="prev-new">+ Novo lembrete</button></div>
+  ${pend.length? pend.map(prevItemHtml).join('') : `<div class="table-wrap"><div class="empty-state"><div class="display">Nenhum lembrete de preventiva</div>Marque "Manutenção preventiva" no serviço realizado ou no agendamento, ou crie um lembrete aqui.</div></div>`}
+  ${avisados.length? `<details class="svc-det" data-det="prev-avisados" ${uiState.det['prev-avisados']?'open':''}><summary>✔ Já avisados (${avisados.length})</summary><div style="margin-top:10px;">${avisados.map(prevItemHtml).join('')}</div></details>` : ''}`;
+}
+function painelPreventivasHtml(){
+  const lista = prevPendentes().filter(p=>p.proxima && prevDias(p)<=15);
+  if(!lista.length) return '';
+  return `<div class="card" style="margin-top:16px;"><h3>🔁 Manutenções preventivas para avisar</h3><div style="margin-top:10px;">${lista.slice(0,5).map(prevItemHtml).join('')}</div>
+    <button class="btn small" data-action="ver-preventivas">Ver todas (${prevPendentes().length})</button></div>`;
+}
+function prevModalHtml(p){
+  const isEdit = !!(p && p.id);
+  p = p || {clienteId:'', clienteNome:'', telefone:'', servico:'', dataServico:'', proxima:addMesesStr(todayStr(),6), meses:6, obs:''};
+  const base = p.dataServico || todayStr();
+  return `
+  <h2>${isEdit? 'Editar' : 'Novo'} lembrete de preventiva</h2>
+  <form data-form="prev" data-id="${p.id||''}">
+    <input type="hidden" name="origemTipo" value="${p.origemTipo||'manual'}"><input type="hidden" name="origemId" value="${p.origemId||''}">
+    <input type="hidden" name="dataServico" value="${p.dataServico||''}"><input type="hidden" name="meses" value="${p.meses||0}">
+    <div class="field-grid">
+      <div class="field"><label>Cliente cadastrado</label>
+        <select name="clienteId"><option value="">— avulso —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===p.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Nome (se avulso)</label><input name="clienteNome" value="${escapeHtml(p.clienteNome||'')}"></div>
+      <div class="field span2"><label>WhatsApp do cliente</label><input name="telefone" type="tel" value="${escapeHtml(p.telefone||(clientById(p.clienteId)||{}).telefone||'')}" placeholder="(24) 99999-9999"></div>
+      <div class="field span2"><label>Serviço / aparelho</label><input name="servico" value="${escapeHtml(p.servico||'')}" placeholder="Ex: Limpeza - Split 12.000 da sala"></div>
+      <div class="field span2"><label>Avisar daqui a (contando de ${formatDateBR(base)})</label>
+        <div class="chips" style="margin:0 0 8px;">${PREV_MESES.map(n=>`<button type="button" class="chip ${p.meses===n?'active':''}" data-action="prev-meses" data-v="${n}" data-base="${base}">${textoMeses(n)}</button>`).join('')}</div>
+      </div>
+      <div class="field span2"><label>Data do aviso</label><div class="date-input-wrap"><input id="date-prev" name="proxima" type="date" required value="${p.proxima}">${dateIconBtn('date-prev')}</div></div>
+      <div class="field span2"><label>Observações</label><textarea name="obs">${escapeHtml(p.obs||'')}</textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn primary">Salvar lembrete</button>
+    </div>
+  </form>`;
+}
+async function handlePrevForm(form){
+  const id = form.dataset.id, fd = new FormData(form);
+  const data = {
+    clienteId: fd.get('clienteId')||'', clienteNome: fd.get('clienteNome')||'', telefone: formatPhoneBR(fd.get('telefone')||''),
+    servico: fd.get('servico')||'', dataServico: fd.get('dataServico')||'', proxima: fd.get('proxima'), meses: Number(fd.get('meses'))||0,
+    obs: fd.get('obs')||'', origemTipo: fd.get('origemTipo')||'manual', origemId: fd.get('origemId')||'', status:'pendente'
+  };
+  let savedId = id;
+  if(id) await db.collection('preventivas').doc(id).update(data);
+  else savedId = (await db.collection('preventivas').add(data)).id;
+  closeModal(); toast(`🔁 Vou lembrar você em ${formatDateBR(data.proxima)}.`);
+  pushPrevToCalendar(STATE.preventivas.find(x=>x.id===savedId) || {...data, id:savedId});
+}
+// lembrete ligado a um relatório/agendamento: cria, atualiza ou apaga conforme a escolha feita lá
+async function salvarPreventivaDe(tipo, origemId, dados, meses, mesesAntes){
+  const ligado = STATE.preventivas.find(p=>p.origemTipo===tipo && p.origemId===origemId && p.status!=='avisado');
+  if(!meses){ if(mesesAntes && ligado) await removerPreventiva(ligado); return; }
+  const proxima = addMesesStr(dados.data, meses);
+  const reg = {origemTipo:tipo, origemId, clienteId:dados.clienteId||'', clienteNome:dados.clienteNome||'', telefone:dados.telefone||'', servico:dados.servico||'', dataServico:dados.data, meses, proxima, status:'pendente'};
+  if(ligado){ await db.collection('preventivas').doc(ligado.id).update(reg); pushPrevToCalendar({...ligado, ...reg}); return; }
+  if(STATE.preventivas.some(p=>p.origemTipo===tipo && p.origemId===origemId && p.status==='avisado' && p.proxima===proxima)) return;
+  const ref = await db.collection('preventivas').add(reg);
+  pushPrevToCalendar({...reg, id:ref.id});
+}
+function resumoRelatorio(r){
+  const aps = (r.aparelhos||[]).map(a=>a.descricao);
+  const servs = [...(r.itensPrevistos||[]).filter(i=>i.checked), ...(r.itensExtras||[])].map(i=>i.descricao);
+  return [servs.slice(0,2).join(', '), aps.slice(0,2).join(', ')].filter(Boolean).join(' — ');
+}
+// Evento na Google Agenda (avisa com o app fechado). Marcado como preventiva pra não virar "agendamento" no app
+function prevEventBody(p){
+  return {
+    summary:`🔁 Avisar cliente: ${prevNome(p)} — manutenção preventiva`,
+    description:[p.servico, prevTelefone(p)? 'Telefone: '+prevTelefone(p) : ''].filter(Boolean).join('\n'),
+    start:{dateTime:`${p.proxima}T09:00:00`, timeZone:BUSINESS_TZ}, end:{dateTime:`${p.proxima}T09:30:00`, timeZone:BUSINESS_TZ},
+    reminders:{useDefault:false, overrides:[{method:'popup', minutes:0},{method:'popup', minutes:1440}]},
+    extendedProperties:{private:{ca:'preventiva'}}
+  };
+}
+async function pushPrevToCalendar(p){
+  if(!p || !SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope || !SYNC_CONFIG.calendarId) return;
+  if(p.status==='avisado' || !p.proxima || p.proxima<todayStr()) return;
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events`;
+  try{
+    const opts = {headers:{'Content-Type':'application/json'}, body:JSON.stringify(prevEventBody(p))};
+    if(p.googleEventId) await gdFetch(`${base}/${p.googleEventId}`, {method:'PATCH', ...opts});
+    else { const res = await gdFetch(base, {method:'POST', ...opts}); const json = await res.json(); await db.collection('preventivas').doc(p.id).update({googleEventId:json.id}); }
+  }catch(e){ console.error('Falha ao enviar preventiva para a Google Agenda', e); toast('⚠️ Lembrete salvo, mas não consegui enviar para a Google Agenda.'); }
+}
+async function syncPreventivasPendentes(){
+  const hoje = todayStr();
+  for(const p of STATE.preventivas.filter(x=>x.status!=='avisado' && !x.googleEventId && x.proxima>=hoje).slice(0,40)) await pushPrevToCalendar(p);
+}
+async function removerPreventiva(p){
+  if(p.googleEventId) await deleteApptFromCalendar(p.googleEventId);
+  await db.collection('preventivas').doc(p.id).delete();
+}
+
 function apptEventBody(a){
   const cliente = stripApptServ(a.clienteNome, a.servicoDescricao) || clientName(a.clienteId) || 'Cliente avulso';
   const hora = a.hora || '09:00';
@@ -1131,7 +1289,7 @@ async function syncGoogleCalendarPull(){
     events = events.concat(json.items||[]);
     pageToken = json.nextPageToken || '';
   } while(pageToken);
-  events = events.filter(ev=>ev.status!=='cancelled' && ev.start);
+  events = events.filter(ev=>ev.status!=='cancelled' && ev.start && !(ev.extendedProperties && ev.extendedProperties.private && ev.extendedProperties.private.ca==='preventiva'));
   const eventIds = new Set(events.map(e=>e.id));
   const winStartStr = saoPauloDateTimeParts(winStart).dataStr, winEndStr = saoPauloDateTimeParts(winEnd).dataStr;
   const toDelete = STATE.appointments.filter(a=> a.googleEventId && !eventIds.has(a.googleEventId) && a.data>=winStartStr && a.data<=winEndStr);
@@ -1169,7 +1327,7 @@ async function initCalendarSync(){
   if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope) return;
   SYNC_CONFIG.calendarId = 'primary';
   try{ await syncGoogleCalendarPull(); }catch(e){ console.error('Falha ao puxar da Google Agenda', e); }
-  setTimeout(()=>{ syncLembretesPendentes().catch(e=>console.error(e)); }, 3000);
+  setTimeout(()=>{ syncLembretesPendentes().then(syncPreventivasPendentes).catch(e=>console.error(e)); }, 3000);
   updateCalendarBanner();
   if(!calendarPollStarted){
     calendarPollStarted = true;
@@ -1420,6 +1578,7 @@ function renderPainel(){
     <div class="card"><h3>Vendas do mês</h3><div class="big num">${fmt(vendasMes)}</div><div class="sub">${STATE.sales.filter(s=>(s.data||'').slice(0,7)===m).length} venda(s)</div></div>
     <div class="card"><h3>Gastos fixos (mês)</h3><div class="big num" style="color:var(--danger)">${fmt(gastosFixosMes)}</div><div class="sub">${STATE.fixedExpenses.length} gasto(s) cadastrado(s)</div></div>
   </div>
+  ${painelPreventivasHtml()}
   <div class="two-col" style="margin-top:16px;">
     <div class="card">
       <h3>Próximos agendamentos</h3>
@@ -1728,20 +1887,23 @@ function renderAgenda(){
   const executados = uiState.agendaTab==='executados';
   const nExec = STATE.appointments.filter(a=>a.status==='Concluído').length;
   const nAbertos = STATE.appointments.filter(a=>a.status!=='Concluído' && a.status!=='Cancelado').length;
-  const body = executados ? renderAgendaDone() : (uiState.agendaView==='semana' ? renderAgendaWeek() : renderAgendaList());
-  const sub = executados? 'Serviços já concluídos, do mais recente para o mais antigo.' : (uiState.agendaView==='semana'? 'Clique num horário livre na grade para agendar.' : 'Agendamentos de serviço, com mensagens prontas para o cliente.');
+  const preventivas = uiState.agendaTab==='preventivas', agendados = !executados && !preventivas;
+  const nAvisar = prevParaAvisar().length;
+  const body = preventivas ? renderPreventivas() : executados ? renderAgendaDone() : (uiState.agendaView==='semana' ? renderAgendaWeek() : renderAgendaList());
+  const sub = preventivas? 'Quem você precisa avisar para a manutenção preventiva.' : executados? 'Serviços já concluídos, do mais recente para o mais antigo.' : (uiState.agendaView==='semana'? 'Clique num horário livre na grade para agendar.' : 'Agendamentos de serviço, com mensagens prontas para o cliente.');
   return `
   <div class="page-head">
     <div><h1>▤ Agenda</h1><p>${sub}</p></div>
-    ${!executados && uiState.agendaView==='lista'? `<button class="btn primary" data-action="new-appt">+ Novo agendamento</button>` : ''}
+    ${agendados && uiState.agendaView==='lista'? `<button class="btn primary" data-action="new-appt">+ Novo agendamento</button>` : ''}
   </div>
   <div class="tab-toggle" style="margin-bottom:14px;flex-wrap:wrap;">
-    <button data-action="agenda-tab" data-v="agendados" class="${!executados?'active':''}">📅 Agendamentos (${nAbertos})</button>
+    <button data-action="agenda-tab" data-v="agendados" class="${agendados?'active':''}">📅 Agendamentos (${nAbertos})</button>
     <button data-action="agenda-tab" data-v="executados" class="${executados?'active':''}">✅ Executados (${nExec})</button>
+    <button data-action="agenda-tab" data-v="preventivas" class="${preventivas?'active':''}">🔁 Preventivas (${prevPendentes().length})${nAvisar? ` <span style="background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">${nAvisar}</span>` : ''}</button>
   </div>
   <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 14px;">${SYNC_CONFIG.calendarScope? '🟢 Sincronizado automaticamente com a Google Agenda (nos dois sentidos) — os itens com 📅 vieram de lá. Sincronizar na hora: Configurações → Sincronização.' : '⚪ Google Agenda não conectada. Ative em Configurações → Sincronização.'}</div>
   ${executados? '' : avisosBoxHtml()}
-  ${executados? '' : `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+  ${!agendados? '' : `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
     <div class="tab-toggle">
       <button data-action="agenda-view" data-v="semana" class="${uiState.agendaView==='semana'?'active':''}">🗓 Semana</button>
       <button data-action="agenda-view" data-v="lista" class="${uiState.agendaView==='lista'?'active':''}">☰ Lista</button>
@@ -1753,6 +1915,10 @@ function renderAgenda(){
   ${body}`;
 }
 
+function btnPreventiva(tipo, id){
+  const tem = STATE.preventivas.find(p=>p.origemTipo===tipo && p.origemId===id && p.status!=='avisado');
+  return `<button class="icon-btn" data-action="prev-from" data-tipo="${tipo}" data-id="${id}" title="${tem? 'Lembrete de preventiva em '+formatDateBR(tem.proxima) : 'Lembrar manutenção preventiva'}" style="${tem? 'background:#E3F3EA;border-color:#1E8E5A;' : ''}">🔁</button>`;
+}
 function renderAgendaDone(){
   const list = STATE.appointments.filter(a=>a.status==='Concluído');
   const linha = a=>`<tr>
@@ -1765,12 +1931,13 @@ function renderAgendaDone(){
       </select>
     </td>
     <td><div class="row-actions">
+      ${btnPreventiva('appt', a.id)}
       <button class="icon-btn" data-action="edit-appt" data-id="${a.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="delete-appt" data-id="${a.id}">${trashIcon}</button>
     </div></td>
   </tr>`;
   if(!list.length) return `<div class="table-wrap"><div class="empty-state"><div class="display">Nenhum serviço executado ainda</div>Quando terminar um serviço, mude o status dele para "Concluído" e ele aparece aqui.</div></div>`;
-  return listaPorMesSemana({lista:list, linha, chave:'exec', cabecalho:'<th style="width:140px;">Data / Hora</th><th>Cliente</th><th>Serviço</th><th style="width:170px;">Status</th><th style="width:110px;"></th>'});
+  return listaPorMesSemana({lista:list, linha, chave:'exec', cabecalho:'<th style="width:140px;">Data / Hora</th><th>Cliente</th><th>Serviço</th><th style="width:170px;">Status</th><th style="width:160px;"></th>'});
 }
 // avisa pra onde o agendamento foi, pra não parecer que sumiu
 function toastMudancaAba(antes, depois){
@@ -1904,6 +2071,10 @@ function apptModalHtml(a){
           <input type="hidden" name="lembretes" value="${apptLembretes(a).join(',')}">
         </div>
       </div>
+      <div class="field"><label>🔁 Manutenção preventiva</label>
+        <select name="preventivaMeses"><option value="0">Não lembrar</option>${PREV_MESES.map(n=>`<option value="${n}" ${a.preventivaMeses===n?'selected':''}>Avisar o cliente em ${textoMeses(n)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>WhatsApp do cliente</label><input name="preventivaTel" type="tel" value="${escapeHtml(a.preventivaTel||(clientById(a.clienteId)||{}).telefone||'')}" placeholder="(24) 99999-9999"></div>
       <div class="field span2"><label>Observações</label><textarea name="obs">${escapeHtml(a.obs)}</textarea></div>
     </div>
     <div class="modal-actions" style="${isEdit?'justify-content:space-between;':''}">
@@ -1926,8 +2097,10 @@ async function handleApptForm(form){
     servicoId: servicoId||'', servicoDescricao: servico? servico.nome : (fd.get('servicoDescricao')||''),
     data: fd.get('data'), hora: fd.get('hora'), horaFim: fd.get('horaFim')||'', status: fd.get('status'), obs: fd.get('obs')||'',
     cor: fd.get('cor')||APPT_COLORS[0],
-    lembretes: String(fd.get('lembretes')||'').split(',').filter(Boolean).map(Number)
+    lembretes: String(fd.get('lembretes')||'').split(',').filter(Boolean).map(Number),
+    preventivaMeses: Number(fd.get('preventivaMeses'))||0, preventivaTel: formatPhoneBR(fd.get('preventivaTel')||'')
   };
+  const mesesAntes = id? (STATE.appointments.find(x=>x.id===id)||{}).preventivaMeses : 0;
   let savedId = id;
   const statusAntes = id? (STATE.appointments.find(x=>x.id===id)||{}).status : '';
   if(id) await db.collection('appointments').doc(id).update(data);
@@ -1936,6 +2109,7 @@ async function handleApptForm(form){
   const saved = STATE.appointments.find(x=>x.id===savedId);
   pushApptToCalendar(saved || {...data, id:savedId});
   toastMudancaAba(statusAntes, data.status);
+  await salvarPreventivaDe('appt', savedId, {...data, telefone:data.preventivaTel, servico:data.servicoDescricao, clienteNome:stripApptServ(data.clienteNome,data.servicoDescricao)}, data.preventivaMeses, mesesAntes);
   if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope) toast('⚠️ Salvo, mas sem a Google Agenda conectada o aviso só aparece com este app aberto.');
   setTimeout(checkLembretes, 800);
 }
@@ -1956,12 +2130,12 @@ async function notificarAparelho(titulo, corpo, tag){
     else new Notification(titulo, opts);
   }catch(e){ console.error('Falha na notificação', e); }
 }
-function cartaoLembrete(titulo, corpo){
+function cartaoLembrete(titulo, corpo, verPreventivas){
   const box = document.getElementById('lembrete-box'); if(!box) return;
   const div = document.createElement('div');
   div.className = 'floating-card';
   div.style.display = 'flex';
-  div.innerHTML = `<span><b>${escapeHtml(titulo)}</b><br>${escapeHtml(corpo).replace(/\n/g,'<br>')}</span><button type="button" data-action="fechar-lembrete">OK</button>`;
+  div.innerHTML = `<span><b>${escapeHtml(titulo)}</b><br>${escapeHtml(corpo).replace(/\n/g,'<br>')}</span>${verPreventivas? '<button type="button" data-action="ver-preventivas">Ver</button>' : ''}<button type="button" data-action="fechar-lembrete">OK</button>`;
   box.appendChild(div);
 }
 function checkLembretes(){
@@ -1976,6 +2150,13 @@ function checkLembretes(){
     const titulo = `📅 Hoje: ${doDia.length} serviço${doDia.length>1?'s':''}`;
     const corpo = doDia.slice(0,5).map(a=>`${a.hora||''} ${nome(a)}${a.servicoDescricao? ' — '+a.servicoDescricao : ''}`.trim()).join('\n');
     cartaoLembrete(titulo, corpo); notificarAparelho(titulo, corpo, 'resumo-'+hoje);
+  }
+  const avisar = prevParaAvisar();
+  if(avisar.length && !lidos.includes('prev|'+hoje)){
+    lidos.push('prev|'+hoje);
+    const titulo = `🔁 ${avisar.length} cliente${avisar.length>1?'s':''} para avisar (preventiva)`;
+    const corpo = avisar.slice(0,5).map(p=>`${prevNome(p)} — ${formatDateBR(p.proxima)}`).join('\n');
+    cartaoLembrete(titulo, corpo, true); notificarAparelho(titulo, corpo, 'preventiva-'+hoje);
   }
   abertos.filter(a=>a.hora).forEach(a=>{
     const inicio = new Date(`${a.data}T${a.hora}:00`).getTime();
@@ -2192,6 +2373,7 @@ function renderReportList(){
     <td data-label="Cliente">${escapeHtml(clientName(r.clienteId)||r.clienteNome||'—')}</td>
     <td data-label="Total" class="num" style="font-weight:700;">${fmt(totalRelatorio(r))}</td>
     <td><div class="row-actions">
+      ${btnPreventiva('report', r.id)}
       <button class="icon-btn" data-action="edit-report" data-id="${r.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="print-report" data-id="${r.id}">${printIcon}</button>
       <button class="icon-btn" data-action="delete-report" data-id="${r.id}">${trashIcon}</button>
@@ -2200,7 +2382,7 @@ function renderReportList(){
   return `
   <div class="head-actions" style="margin-bottom:16px;"><button class="btn primary" data-action="new-report">+ Novo relatório</button></div>
   ${STATE.serviceReports.length
-    ? listaPorMesSemana({lista:STATE.serviceReports, linha, chave:'rel', valor:totalRelatorio, cabecalho:'<th style="width:140px;">Data</th><th>Cliente</th><th style="width:160px;">Total</th><th style="width:160px;"></th>'})
+    ? listaPorMesSemana({lista:STATE.serviceReports, linha, chave:'rel', valor:totalRelatorio, cabecalho:'<th style="width:140px;">Data</th><th>Cliente</th><th style="width:160px;">Total</th><th style="width:200px;"></th>'})
     : `<div class="table-wrap"><div class="empty-state"><div class="display">Nenhum relatório ainda</div>Gere a partir de um orçamento aprovado ou crie um avulso.</div></div>`}`;
 }
 function reportStartModalHtml(){
@@ -2326,6 +2508,16 @@ function renderReportEditor(){
     </div>
     <div class="field" style="margin-top:12px;"><label>Observações</label><textarea data-live-input="report-obs">${escapeHtml(d.obs)}</textarea></div>
     <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total geral</span><span class="num">${fmt(calcDesconto(d, subtotal).final)}</span></div>
+    <div class="step-h"><span class="svc-num">4</span> Manutenção preventiva</div>
+    <div class="field"><label>Me lembrar de avisar este cliente daqui a</label>
+      <div class="chips" style="margin:0;">
+        ${[0,...PREV_MESES].map(n=>`<button type="button" class="chip ${(d.preventivaMeses||0)===n?'active':''}" data-action="report-prev-meses" data-v="${n}">${n? textoMeses(n) : 'Não lembrar'}</button>`).join('')}
+      </div>
+    </div>
+    ${d.preventivaMeses? `<div class="field-grid" style="margin-top:8px;">
+      <div class="field"><label>WhatsApp do cliente</label><input type="tel" data-live-input="report-prev-tel" value="${escapeHtml(d.preventivaTel!==undefined? d.preventivaTel : ((clientById(d.clienteId)||{}).telefone||''))}" placeholder="(24) 99999-9999"></div>
+      <div style="align-self:end;font-size:13.5px;padding-bottom:8px;">🔁 Aviso em <b>${formatDateBR(addMesesStr(d.data, d.preventivaMeses))}</b></div>
+    </div>` : ''}
     <div class="modal-actions">
       <button class="btn ghost" data-action="cancel-report">Cancelar</button>
       <button class="btn primary" data-action="save-report">${d.id? 'Salvar alterações' : 'Salvar relatório'}</button>
@@ -3542,6 +3734,44 @@ document.addEventListener('click', async (e)=>{
   if(action==='delete-appt'){ confirmDialog('Excluir este agendamento?', async ()=>{ const appt = STATE.appointments.find(x=>x.id===btn.dataset.id); await db.collection('appointments').doc(btn.dataset.id).delete(); if(appt?.googleEventId) await deleteApptFromCalendar(appt.googleEventId); }); return; }
   if(action==='copy-confirm'){ const a = STATE.appointments.find(x=>x.id===btn.dataset.id); copyText(apptMsgConfirmacao(a)); return; }
   if(action==='copy-lembrete'){ const a = STATE.appointments.find(x=>x.id===btn.dataset.id); copyText(apptMsgLembrete(a)); return; }
+  if(action==='report-prev-meses'){ reportDraft.preventivaMeses = +btn.dataset.v; render(); return; }
+  if(action==='ver-preventivas'){ document.getElementById('lembrete-box').innerHTML=''; uiState.tab='agenda'; uiState.agendaTab='preventivas'; budgetDraft=reportDraft=checklistDraft=photoDraft=saleDraft=laudoDraft=planoDraft=null; editingDraft=false; render(); window.scrollTo(0,0); return; }
+  if(action==='prev-new'){ openModal(prevModalHtml()); return; }
+  if(action==='prev-meses'){
+    const f = btn.closest('form');
+    f.querySelector('input[name="proxima"]').value = addMesesStr(btn.dataset.base, +btn.dataset.v);
+    f.querySelector('input[name="meses"]').value = btn.dataset.v;
+    btn.parentElement.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active', x===btn));
+    return;
+  }
+  if(action==='prev-edit'){ const p=STATE.preventivas.find(x=>x.id===btn.dataset.id); if(p) openModal(prevModalHtml(p)); return; }
+  if(action==='prev-from'){
+    const tipo = btn.dataset.tipo, oid = btn.dataset.id;
+    const ligado = STATE.preventivas.find(p=>p.origemTipo===tipo && p.origemId===oid && p.status!=='avisado');
+    if(ligado){ openModal(prevModalHtml(ligado)); return; }
+    const o = (tipo==='report'? STATE.serviceReports : STATE.appointments).find(x=>x.id===oid); if(!o) return;
+    openModal(prevModalHtml({origemTipo:tipo, origemId:oid, clienteId:o.clienteId||'', clienteNome: tipo==='report'? (o.clienteNome||'') : stripApptServ(o.clienteNome,o.servicoDescricao), telefone:o.preventivaTel||'', servico: tipo==='report'? resumoRelatorio(o) : (o.servicoDescricao||''), dataServico:o.data, meses:6, proxima:addMesesStr(o.data,6), obs:''}));
+    return;
+  }
+  if(action==='prev-copy'){ const p=STATE.preventivas.find(x=>x.id===btn.dataset.id); if(p) copyText(prevMensagem(p)); return; }
+  if(action==='prev-avisado'){
+    const p=STATE.preventivas.find(x=>x.id===btn.dataset.id); if(!p) return;
+    if(p.googleEventId) await deleteApptFromCalendar(p.googleEventId);
+    await db.collection('preventivas').doc(p.id).update({status:'avisado', avisadoEm:todayStr(), googleEventId:''});
+    toast('✔ Marcado como avisado.'); render(); return;
+  }
+  if(action==='prev-denovo'){
+    const p=STATE.preventivas.find(x=>x.id===btn.dataset.id); if(!p) return;
+    const novo = {...p, status:'pendente', avisadoEm:'', proxima:addMesesStr(todayStr(), p.meses||6), googleEventId:''};
+    const {id:pid, ...dados} = novo;
+    await db.collection('preventivas').doc(pid).update(dados); toast(`🔁 Vou lembrar de novo em ${formatDateBR(novo.proxima)}.`); render(); pushPrevToCalendar(novo); return;
+  }
+  if(action==='prev-delete'){ confirmDialog('Apagar este lembrete de preventiva?', async ()=>{ const p=STATE.preventivas.find(x=>x.id===btn.dataset.id); if(p){ await removerPreventiva(p); render(); } }); return; }
+  if(action==='prev-agendar'){
+    const p=STATE.preventivas.find(x=>x.id===btn.dataset.id); if(!p) return;
+    openModal(apptModalHtml({clienteId:p.clienteId||'', clienteNome:p.clienteId? '' : p.clienteNome, servicoId:'', servicoDescricao:'Manutenção preventiva', data: p.proxima<todayStr()? todayStr() : p.proxima, hora:'09:00', horaFim:'10:00', status:'Agendado', obs:p.servico||'', cor:APPT_COLORS[1], preventivaTel:p.telefone||''}));
+    bindApptServicoSync(); return;
+  }
   if(action==='toggle-past'){ uiState.agendaShowPast = !uiState.agendaShowPast; render(); return; }
   if(action==='agenda-view'){ uiState.agendaView = btn.dataset.v; render(); return; }
   if(action==='agenda-tab'){ uiState.agendaTab = btn.dataset.v; render(); return; }
@@ -3712,9 +3942,13 @@ document.addEventListener('click', async (e)=>{
     if(apNovo && apNovo.value.trim()) reportDraft.aparelhos.push({id:uid(), descricao:apNovo.value.trim(), quantidade:Math.max(1, parseInt(document.getElementById('aparelho-qtd').value||1))});
     delete reportDraft.aparelhoAtual;
     const {id, ...data} = reportDraft;
+    const mesesAntes = id? (STATE.serviceReports.find(x=>x.id===id)||{}).preventivaMeses : 0;
+    let relId = id;
     if(id) await db.collection('serviceReports').doc(id).update(data);
-    else await db.collection('serviceReports').add(data);
-    reportDraft=null; editingDraft=false; toast('Relatório salvo!'); render(); return;
+    else relId = (await db.collection('serviceReports').add(data)).id;
+    reportDraft=null; editingDraft=false; toast('Relatório salvo!'); render();
+    await salvarPreventivaDe('report', relId, {data:data.data, clienteId:data.clienteId, clienteNome:data.clienteNome, telefone:data.preventivaTel, servico:resumoRelatorio(data)}, data.preventivaMeses||0, mesesAntes);
+    return;
   }
   if(action==='edit-report'){
     const r = STATE.serviceReports.find(x=>x.id===btn.dataset.id);
@@ -3961,7 +4195,7 @@ document.addEventListener('change', async (e)=>{
 
 document.addEventListener('input', (e)=>{
   const el = e.target;
-  if(el.type==='tel'){ el.value = formatPhoneBR(el.value); return; }
+  if(el.type==='tel'){ el.value = formatPhoneBR(el.value); if(el.dataset.liveInput==='report-prev-tel') reportDraft.preventivaTel = el.value; return; }
   if(el.dataset.liveInput==='crud-search'){ uiState.crudSearch[el.dataset.entity] = el.value; render(); return; }
   if(el.dataset.action==='photo-legenda'){ photoDraft.fotos[+el.dataset.idx].legenda = el.value; return; }
   if(el.dataset.action==='budget-item-desc'){ budgetDraft.itens[+el.dataset.idx].descricao = el.value; return; }
@@ -4023,6 +4257,7 @@ document.addEventListener('submit', async (e)=>{
   else if(type==='tx') await handleTxForm(form);
   else if(type==='fixedExpense') await handleFixedExpenseForm(form);
   else if(type==='appt') await handleApptForm(form);
+  else if(type==='prev') await handlePrevForm(form);
   else if(type==='empresa'){
     const fd = new FormData(form);
     await saveEmpresa({nome:fd.get('nome'), slogan:fd.get('slogan'), endereco:fd.get('endereco'), whatsapp1:formatPhoneBR(fd.get('whatsapp1')), whatsapp2:formatPhoneBR(fd.get('whatsapp2')), instagram:fd.get('instagram'), garantiaDias:parseInt(fd.get('garantiaDias')||90)});
