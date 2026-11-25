@@ -519,7 +519,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.41.0';
+const APP_VERSION = 'v1.41.1';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[],preventivas:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, det:{}, agendaTab:'agendados', agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1936,8 +1936,16 @@ function renderAgendaDone(){
       <button class="icon-btn" data-action="delete-appt" data-id="${a.id}">${trashIcon}</button>
     </div></td>
   </tr>`;
-  if(!list.length) return `<div class="table-wrap"><div class="empty-state"><div class="display">Nenhum serviço executado ainda</div>Quando terminar um serviço, mude o status dele para "Concluído" e ele aparece aqui.</div></div>`;
-  return listaPorMesSemana({lista:list, linha, chave:'exec', cabecalho:'<th style="width:140px;">Data / Hora</th><th>Cliente</th><th>Serviço</th><th style="width:170px;">Status</th><th style="width:160px;"></th>'});
+  const hoje = todayStr();
+  const passados = STATE.appointments.filter(a=>a.data && a.data<hoje && a.status!=='Concluído' && a.status!=='Cancelado').sort((a,b)=>((b.data||'')+(b.hora||'')).localeCompare((a.data||'')+(a.hora||'')));
+  const topo = `<div class="head-actions" style="margin-bottom:14px;"><button class="btn primary" data-action="new-exec">+ Registrar serviço executado</button></div>
+  ${passados.length? `<details class="svc-det" data-det="passados" ${uiState.det.passados?'open':''}><summary>📌 Agendamentos de datas passadas para confirmar (${passados.length})</summary><div style="margin-top:10px;">${passados.slice(0,60).map(a=>`
+    <div class="prev-item"><div class="prev-top">
+      <div><b>${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso')}</b><div style="color:var(--ink-soft);">${formatDateBR(a.data)}${a.hora? ' · '+a.hora : ''}${a.servicoDescricao? ' · '+escapeHtml(a.servicoDescricao) : ''}</div></div>
+      <button class="btn small primary" data-action="appt-done" data-id="${a.id}">✔ Foi feito</button>
+    </div></div>`).join('')}</div></details>` : ''}`;
+  if(!list.length) return topo + `<div class="table-wrap"><div class="empty-state"><div class="display">Nenhum serviço executado ainda</div>Toque em "+ Registrar serviço executado" ou marque um agendamento como feito.</div></div>`;
+  return topo + listaPorMesSemana({lista:list, linha, chave:'exec', cabecalho:'<th style="width:140px;">Data / Hora</th><th>Cliente</th><th>Serviço</th><th style="width:170px;">Status</th><th style="width:160px;"></th>'});
 }
 // avisa pra onde o agendamento foi, pra não parecer que sumiu
 function toastMudancaAba(antes, depois){
@@ -1958,6 +1966,7 @@ function renderAgendaList(){
       </select>
     </td>
     <td><div class="row-actions">
+      ${a.status!=='Cancelado'? `<button class="btn small primary" data-action="appt-done" data-id="${a.id}">✔ Foi feito</button>` : ''}
       <button class="btn small" data-action="copy-confirm" data-id="${a.id}">Copiar confirmação</button>
       <button class="btn small" data-action="copy-lembrete" data-id="${a.id}">Copiar lembrete</button>
       <button class="icon-btn" data-action="edit-appt" data-id="${a.id}">${editIcon}</button>
@@ -2041,7 +2050,8 @@ function apptModalHtml(a){
   const isEdit = !!a && !!a.id;
   a = newApptDraft(a);
   return `
-  <h2>${isEdit?'Editar':'Novo'} agendamento</h2>
+  <h2>${!isEdit && a.status==='Concluído'? 'Registrar serviço executado' : (isEdit?'Editar':'Novo')+' agendamento'}</h2>
+  ${isEdit && a.status!=='Concluído' && a.status!=='Cancelado'? `<button type="button" class="btn primary" style="width:100%;justify-content:center;margin-bottom:14px;" data-action="appt-done" data-id="${a.id}">✔ Foi feito — mover para Executados</button>` : ''}
   <form data-form="appt" data-id="${a.id||''}">
     <div class="field-grid">
       <div class="field"><label>Cliente cadastrado</label>
@@ -2065,7 +2075,7 @@ function apptModalHtml(a){
           <input type="hidden" name="cor" value="${a.cor||APPT_COLORS[0]}">
         </div>
       </div>
-      <div class="field span2"><label>🔔 Me avisar</label>
+      <div class="field span2" ${a.status==='Concluído'? 'style="display:none;"' : ''}><label>🔔 Me avisar</label>
         <div class="chips" style="margin:0;">
           ${LEMBRETE_OPCOES.map(([m,t])=>`<button type="button" class="chip ${apptLembretes(a).includes(m)?'active':''}" data-action="pick-lembrete" data-min="${m}">${t}</button>`).join('')}
           <input type="hidden" name="lembretes" value="${apptLembretes(a).join(',')}">
@@ -2081,7 +2091,7 @@ function apptModalHtml(a){
       ${isEdit? `<button type="button" class="btn danger-solid" data-action="delete-appt" data-id="${a.id}">Excluir</button>` : ''}
       <div style="display:flex;gap:10px;">
         <button type="button" class="btn ghost" data-action="close-modal">Cancelar</button>
-        <button type="submit" class="btn primary">${isEdit?'Salvar':'Agendar'}</button>
+        <button type="submit" class="btn primary">${isEdit||a.status==='Concluído'?'Salvar':'Agendar'}</button>
       </div>
     </div>
   </form>`;
@@ -2110,7 +2120,8 @@ async function handleApptForm(form){
   pushApptToCalendar(saved || {...data, id:savedId});
   toastMudancaAba(statusAntes, data.status);
   await salvarPreventivaDe('appt', savedId, {...data, telefone:data.preventivaTel, servico:data.servicoDescricao, clienteNome:stripApptServ(data.clienteNome,data.servicoDescricao)}, data.preventivaMeses, mesesAntes);
-  if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope) toast('⚠️ Salvo, mas sem a Google Agenda conectada o aviso só aparece com este app aberto.');
+  if(data.status!=='Concluído' && (!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope)) toast('⚠️ Salvo, mas sem a Google Agenda conectada o aviso só aparece com este app aberto.');
+  render();
   setTimeout(checkLembretes, 800);
 }
 
@@ -3771,6 +3782,17 @@ document.addEventListener('click', async (e)=>{
     const p=STATE.preventivas.find(x=>x.id===btn.dataset.id); if(!p) return;
     openModal(apptModalHtml({clienteId:p.clienteId||'', clienteNome:p.clienteId? '' : p.clienteNome, servicoId:'', servicoDescricao:'Manutenção preventiva', data: p.proxima<todayStr()? todayStr() : p.proxima, hora:'09:00', horaFim:'10:00', status:'Agendado', obs:p.servico||'', cor:APPT_COLORS[1], preventivaTel:p.telefone||''}));
     bindApptServicoSync(); return;
+  }
+  if(action==='new-exec'){
+    const agora = new Date();
+    openModal(apptModalHtml({clienteId:'', clienteNome:'', servicoId:'', servicoDescricao:'', data:todayStr(), hora:`${pad2(agora.getHours())}:00`, horaFim:'', status:'Concluído', obs:'', cor:APPT_COLORS[1]}));
+    bindApptServicoSync(); return;
+  }
+  if(action==='appt-done'){
+    const a = STATE.appointments.find(x=>x.id===btn.dataset.id); if(!a) return;
+    const antes = a.status;
+    await db.collection('appointments').doc(a.id).update({status:'Concluído'});
+    closeModal(); render(); toastMudancaAba(antes, 'Concluído'); return;
   }
   if(action==='toggle-past'){ uiState.agendaShowPast = !uiState.agendaShowPast; render(); return; }
   if(action==='agenda-view'){ uiState.agendaView = btn.dataset.v; render(); return; }
