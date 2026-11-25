@@ -316,6 +316,29 @@ tr:hover td{background:var(--paper);}
   .grid.g3{grid-template-columns:1fr;}
 }
 
+/* editor do Serviço realizado: um cartão por aparelho */
+.step-h{display:flex;align-items:center;gap:8px;font-family:'Poppins',sans-serif;font-weight:700;font-size:15px;margin:22px 0 8px;}
+.svc-card{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0;background:var(--surface);}
+.svc-card input,.svc-card select{width:100%;min-width:0;padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:16px;}
+.svc-card-head{display:grid;grid-template-columns:30px 1fr 80px 32px;gap:10px;align-items:center;margin-bottom:6px;}
+.svc-card-head input:first-of-type{font-weight:700;}
+.svc-num{width:30px;height:30px;border-radius:50%;background:#1B4A82;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;}
+.item-row.cols-svc{grid-template-columns:1fr 70px 115px 115px 32px;padding:6px 0;}
+.svc-add{display:grid;grid-template-columns:1fr 70px 115px 115px auto;gap:8px;align-items:center;background:var(--paper);border-radius:10px;padding:10px;margin-top:10px;}
+.svc-add .btn{white-space:nowrap;justify-content:center;}
+.svc-full{grid-column:1/-1;}
+.svc-add-ap{display:grid;grid-template-columns:1fr 80px auto;gap:8px;align-items:center;}
+.svc-sub{text-align:right;font-weight:700;margin-top:10px;font-size:13.5px;}
+.svc-det{margin:12px 0;}
+.svc-det>summary{cursor:pointer;font-weight:600;font-size:13.5px;color:var(--ink);padding:10px 12px;border:1px dashed var(--line);border-radius:10px;}
+@media(max-width:880px){
+  .item-row.cols-svc,.svc-add{grid-template-columns:62px 1fr 1fr 32px;gap:8px;}
+  .item-row.cols-svc .svc-desc,.svc-add .svc-desc,.svc-add .btn{grid-column:1/-1;}
+  .item-row.cols-svc > *{width:auto;}
+  .svc-add-ap{grid-template-columns:1fr 80px;}
+  .svc-add-ap .btn{grid-column:1/-1;justify-content:center;}
+}
+
 /* print documents */
 #print-root{display:none;}
 #print-root.show{display:block;position:fixed;inset:0;background:#EAEDF1;z-index:300;overflow-y:auto;padding:18px 0 60px;}
@@ -397,6 +420,7 @@ tr:hover td{background:var(--paper);}
 <body>
 
 <div class="floating-notices">
+  <div id="lembrete-box" style="display:flex;flex-direction:column;gap:10px;align-items:flex-end;"></div>
   <div class="floating-card" id="reconnect-banner" style="display:none;">
     <span>🔌 Sincronização desconectada</span>
     <button type="button" data-action="quick-reconnect">Conectar agora</button>
@@ -472,9 +496,9 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.38.0';
+const APP_VERSION = 'v1.39.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
-const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, agendaTab:'agendados', agendaView:'semana', agendaWeekStart:null};
+const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, det:{}, agendaTab:'agendados', agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
 let downloadsApi = null;
 async function initDownloads(){
@@ -551,7 +575,7 @@ function descontoEditorHtml(kind, d, subtotal){
     <div class="field-grid">
       <div class="field"><label>Outro desconto em R$ <span style="font-weight:400;color:var(--ink-soft);">— opcional</span></label><input type="text" inputmode="decimal" value="${ds.valor? (+ds.valor).toFixed(2).replace('.',',') : ''}" placeholder="0,00" data-action="desc-valor" data-kind="${kind}"></div>
     </div>
-    ${temAp? `<div class="field" style="margin-top:10px;"><label>Abater em qual aparelho? <span style="font-weight:400;color:var(--ink-soft);">— é o mesmo seletor dos serviços acima</span></label><select id="desc-ap-${kind}" data-live-input="${kind}-extra-aparelho">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select></div>` : ''}
+    ${temAp? `<div class="field" style="margin-top:10px;"><label>Abater em qual aparelho?</label><select id="desc-ap-${kind}" data-live-input="${kind}-extra-aparelho">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select></div>` : ''}
     <div class="field" style="margin-top:10px;"><label>Material/produto que o cliente fornece <span style="font-weight:400;color:var(--ink-soft);">— o valor dele é abatido do total (ex.: 2 metros de tubulação)</span></label></div>
     <div class="field-grid">
       <div class="field span2"><label>Escolher do catálogo</label>
@@ -1029,11 +1053,22 @@ function stripApptServ(name, serv){
   while(name.endsWith(suf)) name = name.slice(0, -suf.length);
   return name;
 }
+// Lembretes: minutos antes do horário. Vão para a Google Agenda (avisa no celular e no PC mesmo com o app fechado)
+const LEMBRETE_OPCOES = [[1440,'1 dia antes'],[120,'2 horas antes'],[60,'1 hora antes'],[30,'30 min antes']];
+const LEMBRETE_PADRAO = [1440, 60];
+function apptLembretes(a){ return Array.isArray(a.lembretes)? a.lembretes : LEMBRETE_PADRAO; }
+// eventos vindos da Google Agenda mantêm os avisos de lá, a menos que você escolha os seus no app
+function apptReminders(a){
+  if(!Array.isArray(a.lembretes) && a.origem==='google') return null;
+  return {useDefault:false, overrides: apptLembretes(a).map(m=>({method:'popup', minutes:m}))};
+}
 function apptEventBody(a){
   const cliente = stripApptServ(a.clienteNome, a.servicoDescricao) || clientName(a.clienteId) || 'Cliente avulso';
   const hora = a.hora || '09:00';
   const endStr = (a.horaFim && a.horaFim > hora) ? `${a.data}T${a.horaFim}:00` : addOneHourToDataHora(a.data, hora);
+  const reminders = apptReminders(a);
   return {
+    ...(reminders? {reminders} : {}),
     summary: `${cliente}${a.servicoDescricao? ' — '+a.servicoDescricao : ''}`,
     description: a.obs||'',
     start: {dateTime: `${a.data}T${hora}:00`, timeZone: BUSINESS_TZ},
@@ -1055,7 +1090,18 @@ async function pushApptToCalendar(a){
       const json = await res.json();
       await db.collection('appointments').doc(a.id).update({googleEventId: json.id});
     }
-  }catch(e){ console.error('Falha ao sincronizar com a Google Agenda', e); }
+  }catch(e){ console.error('Falha ao sincronizar com a Google Agenda', e); toast('⚠️ Não consegui enviar para a Google Agenda. Confira a conexão em Configurações.'); }
+}
+// coloca os avisos nos agendamentos futuros que já estavam na Google Agenda (só mexe nos avisos)
+async function syncLembretesPendentes(){
+  const hoje = todayStr();
+  const pend = STATE.appointments.filter(a=>a.googleEventId && a.origem!=='google' && a.data>=hoje && a.status!=='Concluído' && a.status!=='Cancelado' && a.lembreteSync!==JSON.stringify(apptLembretes(a)));
+  for(const a of pend.slice(0,60)){
+    try{
+      await gdFetch(`https://www.googleapis.com/calendar/v3/calendars/${SYNC_CONFIG.calendarId}/events/${a.googleEventId}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reminders: apptReminders(a)})});
+      await db.collection('appointments').doc(a.id).update({lembreteSync: JSON.stringify(apptLembretes(a))});
+    }catch(e){ console.error('Falha ao colocar avisos no evento', e); }
+  }
 }
 async function deleteApptFromCalendar(googleEventId){
   if(!googleEventId || !SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope || !SYNC_CONFIG.calendarId) return;
@@ -1112,6 +1158,7 @@ async function initCalendarSync(){
   if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope) return;
   SYNC_CONFIG.calendarId = 'primary';
   try{ await syncGoogleCalendarPull(); }catch(e){ console.error('Falha ao puxar da Google Agenda', e); }
+  setTimeout(()=>{ syncLembretesPendentes().catch(e=>console.error(e)); }, 3000);
   updateCalendarBanner();
   if(!calendarPollStarted){
     calendarPollStarted = true;
@@ -1682,6 +1729,7 @@ function renderAgenda(){
     <button data-action="agenda-tab" data-v="executados" class="${executados?'active':''}">✅ Executados (${nExec})</button>
   </div>
   <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 14px;">${SYNC_CONFIG.calendarScope? '🟢 Sincronizado automaticamente com a Google Agenda (nos dois sentidos) — os itens com 📅 vieram de lá. Sincronizar na hora: Configurações → Sincronização.' : '⚪ Google Agenda não conectada. Ative em Configurações → Sincronização.'}</div>
+  ${executados? '' : avisosBoxHtml()}
   ${executados? '' : `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
     <div class="tab-toggle">
       <button data-action="agenda-view" data-v="semana" class="${uiState.agendaView==='semana'?'active':''}">🗓 Semana</button>
@@ -1842,6 +1890,12 @@ function apptModalHtml(a){
           <input type="hidden" name="cor" value="${a.cor||APPT_COLORS[0]}">
         </div>
       </div>
+      <div class="field span2"><label>🔔 Me avisar</label>
+        <div class="chips" style="margin:0;">
+          ${LEMBRETE_OPCOES.map(([m,t])=>`<button type="button" class="chip ${apptLembretes(a).includes(m)?'active':''}" data-action="pick-lembrete" data-min="${m}">${t}</button>`).join('')}
+          <input type="hidden" name="lembretes" value="${apptLembretes(a).join(',')}">
+        </div>
+      </div>
       <div class="field span2"><label>Observações</label><textarea name="obs">${escapeHtml(a.obs)}</textarea></div>
     </div>
     <div class="modal-actions" style="${isEdit?'justify-content:space-between;':''}">
@@ -1863,7 +1917,8 @@ async function handleApptForm(form){
     clienteId: fd.get('clienteId')||'', clienteNome: fd.get('clienteNome')||'',
     servicoId: servicoId||'', servicoDescricao: servico? servico.nome : (fd.get('servicoDescricao')||''),
     data: fd.get('data'), hora: fd.get('hora'), horaFim: fd.get('horaFim')||'', status: fd.get('status'), obs: fd.get('obs')||'',
-    cor: fd.get('cor')||APPT_COLORS[0]
+    cor: fd.get('cor')||APPT_COLORS[0],
+    lembretes: String(fd.get('lembretes')||'').split(',').filter(Boolean).map(Number)
   };
   let savedId = id;
   const statusAntes = id? (STATE.appointments.find(x=>x.id===id)||{}).status : '';
@@ -1873,6 +1928,71 @@ async function handleApptForm(form){
   const saved = STATE.appointments.find(x=>x.id===savedId);
   pushApptToCalendar(saved || {...data, id:savedId});
   toastMudancaAba(statusAntes, data.status);
+  if(!SYNC_CONFIG.connected || !SYNC_CONFIG.calendarScope) toast('⚠️ Salvo, mas sem a Google Agenda conectada o aviso só aparece com este app aberto.');
+  setTimeout(checkLembretes, 800);
+}
+
+/* ---------- Avisos com o app aberto (cartão na tela + notificação do aparelho) ---------- */
+let swReg = null;
+function registrarSW(){
+  if(!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
+  navigator.serviceWorker.register('sw.js').then(r=>{ swReg = r; }).catch(e=>console.error('sw', e));
+}
+function lidosLembretes(){ try{ return JSON.parse(localStorage.getItem('centralar_notificados')||'[]'); }catch(e){ return []; } }
+function gravarLidos(l){ try{ localStorage.setItem('centralar_notificados', JSON.stringify(l.slice(-300))); }catch(e){} }
+async function notificarAparelho(titulo, corpo, tag){
+  if(typeof Notification==='undefined' || Notification.permission!=='granted') return;
+  const opts = {body:corpo, tag, icon:'icons/icon-192.png', badge:'icons/icon-192.png', requireInteraction:true};
+  try{
+    if(swReg && swReg.showNotification) await swReg.showNotification(titulo, opts);
+    else new Notification(titulo, opts);
+  }catch(e){ console.error('Falha na notificação', e); }
+}
+function cartaoLembrete(titulo, corpo){
+  const box = document.getElementById('lembrete-box'); if(!box) return;
+  const div = document.createElement('div');
+  div.className = 'floating-card';
+  div.style.display = 'flex';
+  div.innerHTML = `<span><b>${escapeHtml(titulo)}</b><br>${escapeHtml(corpo).replace(/\n/g,'<br>')}</span><button type="button" data-action="fechar-lembrete">OK</button>`;
+  box.appendChild(div);
+}
+function checkLembretes(){
+  if(!STATE.appointments) return;
+  const agora = Date.now(), hoje = todayStr(), lidos = lidosLembretes();
+  const nome = a => stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente';
+  const abertos = STATE.appointments.filter(a=>a.status!=='Concluído' && a.status!=='Cancelado' && a.data);
+  // resumo do dia, uma vez por dia
+  const doDia = abertos.filter(a=>a.data===hoje).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+  if(doDia.length && !lidos.includes('resumo|'+hoje)){
+    lidos.push('resumo|'+hoje);
+    const titulo = `📅 Hoje: ${doDia.length} serviço${doDia.length>1?'s':''}`;
+    const corpo = doDia.slice(0,5).map(a=>`${a.hora||''} ${nome(a)}${a.servicoDescricao? ' — '+a.servicoDescricao : ''}`.trim()).join('\n');
+    cartaoLembrete(titulo, corpo); notificarAparelho(titulo, corpo, 'resumo-'+hoje);
+  }
+  abertos.filter(a=>a.hora).forEach(a=>{
+    const inicio = new Date(`${a.data}T${a.hora}:00`).getTime();
+    if(!(agora < inicio + 15*60000)) return;
+    const vencidos = apptLembretes(a).filter(m=> agora >= inicio - m*60000);
+    const chaves = vencidos.map(m=>`${a.id}|${a.data}|${a.hora}|${m}`).filter(k=>!lidos.includes(k));
+    if(!chaves.length) return;
+    lidos.push(...chaves);
+    const titulo = `⏰ ${a.data===hoje? 'Hoje' : formatDateBR(a.data)} às ${a.hora} — ${nome(a)}`;
+    const corpo = a.servicoDescricao || 'Serviço agendado';
+    cartaoLembrete(titulo, corpo); notificarAparelho(titulo, corpo, a.id);
+  });
+  gravarLidos(lidos);
+}
+function avisosBoxHtml(){
+  const suporta = typeof Notification!=='undefined';
+  const p = suporta? Notification.permission : '';
+  const estado = !suporta
+    ? 'Neste aparelho o aviso na tela só aparece com o app aberto.'
+    : p==='granted'? '✅ Avisos ativados neste aparelho.' : p==='denied'? '🚫 As notificações estão bloqueadas neste navegador — libere nas configurações dele.' : 'Ative os avisos neste aparelho.';
+  const botao = !suporta? '' : p==='granted'? `<button type="button" class="btn small" data-action="testar-aviso">Testar aviso</button>` : p==='default'? `<button type="button" class="btn small primary" data-action="ativar-avisos">🔔 Ativar avisos</button>` : '';
+  return `<div style="border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 12px;margin-bottom:14px;font-size:13px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><b>${estado}</b>${botao}</div>
+    <div style="color:var(--ink-soft);margin-top:4px;">Para ser avisado com o app <b>fechado</b>: tenha o app <b>Google Agenda</b> no celular (mesma conta) com as notificações ligadas.</div>
+  </div>`;
 }
 
 /* ============================================================
@@ -2071,42 +2191,73 @@ function reportAparelhoOptions(d, selected){
 function renderReportEditor(){
   const d = reportDraft;
   d.aparelhos = d.aparelhos || [];
-  const temAp = d.aparelhos.length > 0;
-  const apSelect = (kind, idx, cur) => temAp? `<select data-action="report-item-aparelho" data-kind="${kind}" data-idx="${idx}" title="De qual aparelho é este serviço" style="max-width:230px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-size:13px;">${reportAparelhoOptions(d, cur||'')}</select>` : '';
-  const aparelhoRows = d.aparelhos.map((a,idx)=>`
-    <div class="item-row cols-ap">
-      <input type="text" value="${escapeHtml(a.descricao)}" data-action="aparelho-edit-desc" data-kind="report" data-idx="${idx}" placeholder="Nome do aparelho">
-      <input type="number" min="1" value="${a.quantidade}" data-action="aparelho-edit-qtd" data-kind="report" data-idx="${idx}" title="Quantidade">
-      <button class="icon-btn" data-action="report-aparelho-rm" data-idx="${idx}">${trashIcon}</button>
-    </div>`).join('');
+  const aps = d.aparelhos;
+  const temAp = id => aps.some(a=>a.id===id);
+  const money = v => (+v||0).toFixed(2).replace('.',',');
   const totalPrev = d.itensPrevistos.filter(i=>i.checked).reduce((s,i)=>s+i.valor,0);
   const totalExtra = d.itensExtras.reduce((s,i)=>s+i.valor*(i.qtd||1),0);
-  const prevRows = d.itensPrevistos.map((it,idx)=>`
-    <div class="check-item" style="flex-wrap:wrap;gap:8px;">
-      <label style="flex:1;min-width:200px;">${escapeHtml(it.descricao)} — <span class="num">${fmt(it.valor)}</span> <span style="color:var(--ink-soft);font-weight:400;">(preço do orçamento, fixo)</span></label>
-      ${apSelect('prev', idx, it.aparelhoId)}
-      <div class="pill-toggle">
-        <button class="ok ${it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="true">Incluir</button>
-        <button class="bad ${!it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="false">Remover</button>
+  const subtotal = totalPrev+totalExtra;
+  const catOpts = [['Serviços','servico',STATE.services],['Produtos','produto',STATE.products],['Materiais','material',STATE.materials]]
+    .map(([rotulo,tipo,lista])=> lista.length? `<optgroup label="${rotulo}">${lista.map(x=>`<option value="${tipo}:${x.id}">${escapeHtml(x.nome)} — ${fmt(x.preco)}</option>`).join('')}</optgroup>` : '').join('');
+  // serviços de um aparelho (apId '' = serviços sem aparelho)
+  const bloco = apId => {
+    const meu = i => apId? i.aparelhoId===apId : !temAp(i.aparelhoId);
+    const prev = d.itensPrevistos.map((it,idx)=>({it,idx})).filter(x=>meu(x.it));
+    const extra = d.itensExtras.map((it,idx)=>({it,idx})).filter(x=>meu(x.it));
+    const k = apId || 'geral';
+    const mover = (kind, idx) => (!apId && aps.length)? `<select class="svc-full" data-action="report-item-aparelho" data-kind="${kind}" data-idx="${idx}"><option value="">Mover para um aparelho...</option>${aps.map(a=>`<option value="${a.id}">${escapeHtml(a.descricao)}</option>`).join('')}</select>` : '';
+    const total = prev.filter(x=>x.it.checked).reduce((s,x)=>s+x.it.valor,0) + extra.reduce((s,x)=>s+x.it.valor*(x.it.qtd||1),0);
+    return `
+      ${prev.map(({it,idx})=>`
+      <div class="check-item" style="flex-wrap:wrap;gap:8px;">
+        <label style="flex:1;min-width:180px;">${escapeHtml(it.descricao)} — <span class="num">${fmt(it.valor)}</span> <span style="color:var(--ink-soft);font-weight:400;">(do orçamento)</span></label>
+        <div class="pill-toggle">
+          <button class="ok ${it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="true">Incluir</button>
+          <button class="bad ${!it.checked?'active':''}" data-action="report-prev-toggle" data-idx="${idx}" data-v="false">Remover</button>
+        </div>
+        ${mover('prev', idx)}
+      </div>`).join('')}
+      ${extra.length? `<div class="item-row item-row-head cols-svc"><span>Serviço feito</span><span>Qtd</span><span>Era (opcional)</span><span>Valor (R$)</span><span></span></div>` : ''}
+      ${extra.map(({it,idx})=>`
+      <div class="item-row cols-svc">
+        <input class="svc-desc" type="text" value="${escapeHtml(it.descricao)}" data-action="report-extra-desc" data-idx="${idx}" placeholder="Serviço feito">
+        <input type="number" min="1" value="${it.qtd||1}" data-action="report-extra-qtd" data-idx="${idx}" title="Quantidade">
+        <input type="text" inputmode="decimal" value="${it.valorOriginal>0? money(it.valorOriginal) : ''}" data-action="report-extra-orig" data-idx="${idx}" placeholder="Era" title="Valor original (opcional)">
+        <input type="text" inputmode="decimal" value="${money(it.valor)}" data-action="report-extra-valor" data-idx="${idx}" placeholder="Valor" title="Valor unitário (R$)">
+        <button class="icon-btn" data-action="report-extra-rm" data-idx="${idx}" title="Apagar">${trashIcon}</button>
+        ${mover('extra', idx)}
+      </div>`).join('')}
+      <div class="svc-add">
+        ${catOpts? `<select class="svc-full" id="svc-cat-${k}" data-action="svc-cat" data-k="${k}"><option value="">📋 Escolher do catálogo (ou escreva abaixo)</option>${catOpts}</select>` : ''}
+        <input class="svc-desc" id="svc-desc-${k}" data-svc="${apId}" placeholder="O que foi feito (ex.: Limpeza completa)">
+        <input id="svc-qtd-${k}" data-svc="${apId}" type="number" min="1" value="1" title="Quantidade">
+        <input id="svc-orig-${k}" data-svc="${apId}" type="text" inputmode="decimal" placeholder="Era (opc.)">
+        <input id="svc-valor-${k}" data-svc="${apId}" type="text" inputmode="decimal" placeholder="Valor R$">
+        <button type="button" class="btn primary" data-action="svc-add" data-ap="${apId}">+ Adicionar</button>
       </div>
-    </div>`).join('') || `<div class="empty-state" style="padding:14px 0;">Nenhum item do orçamento (relatório avulso).</div>`;
-  const extraCls = temAp? 'cols-xao' : 'cols-xo';
-  const extraRows = (d.itensExtras.length? `<div class="item-row item-row-head ${extraCls}"><span>Descrição</span>${temAp?'<span>Aparelho</span>':''}<span>Qtd</span><span>Valor original</span><span>Valor atual (R$)</span><span></span></div>` : '') + d.itensExtras.map((it,idx)=>`
-    <div class="item-row ${extraCls}">
-      <input type="text" value="${escapeHtml(it.descricao)}" data-action="report-extra-desc" data-idx="${idx}" placeholder="Descrição">
-      ${apSelect('extra', idx, it.aparelhoId)}
-      <input type="number" min="1" value="${it.qtd||1}" data-action="report-extra-qtd" data-idx="${idx}" title="Quantidade">
-      <input type="text" inputmode="decimal" value="${it.valorOriginal>0? (+it.valorOriginal).toFixed(2).replace('.',',') : ''}" data-action="report-extra-orig" data-idx="${idx}" placeholder="Valor original" title="Valor original (R$) — opcional, aparece riscado no documento">
-      <input type="text" inputmode="decimal" value="${(+it.valor||0).toFixed(2).replace('.',',')}" data-action="report-extra-valor" data-idx="${idx}" placeholder="Valor atual" title="Valor atual unitário (R$)">
-      <button class="icon-btn" data-action="report-extra-rm" data-idx="${idx}">${trashIcon}</button>
+      ${total? `<div class="svc-sub">Subtotal: ${fmt(total)}</div>` : ''}`;
+  };
+  const cards = aps.map((a,idx)=>`
+    <div class="svc-card">
+      <div class="svc-card-head">
+        <span class="svc-num">${idx+1}</span>
+        <input type="text" value="${escapeHtml(a.descricao)}" data-action="aparelho-edit-desc" data-kind="report" data-idx="${idx}" placeholder="Nome do aparelho">
+        <input type="number" min="1" value="${a.quantidade}" data-action="aparelho-edit-qtd" data-kind="report" data-idx="${idx}" title="Quantidade de aparelhos">
+        <button class="icon-btn" data-action="report-aparelho-rm" data-idx="${idx}" title="Apagar aparelho">${trashIcon}</button>
+      </div>
+      ${bloco(a.id)}
     </div>`).join('');
-  const temItensOrcamento = d.itensPrevistos.length > 0;
-  const orcamentoBlock = `
-    <div class="section-title">Itens do orçamento <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— inclua ou remova, o preço não muda</span></div>
-    ${prevRows}`;
+  const temGeral = [...d.itensPrevistos, ...d.itensExtras].some(i=>!temAp(i.aparelhoId));
+  const geral = !aps.length
+    ? `<div class="svc-card"><b>Serviços</b> <span style="color:var(--ink-soft);font-size:12.5px;">— sem separar por aparelho</span>${bloco('')}</div>`
+    : (temGeral
+      ? `<div class="svc-card"><b>Outros serviços</b> <span style="color:var(--ink-soft);font-size:12.5px;">— sem aparelho</span>${bloco('')}</div>`
+      : `<details class="svc-det" data-det="geral" ${uiState.det.geral?'open':''}><summary>➕ Serviço que não é de um aparelho (ex.: deslocamento)</summary><div class="svc-card">${bloco('')}</div></details>`);
+  const temDesc = !!(d.desc && (d.desc.pct || d.desc.valor || (d.desc.abates||[]).length));
   return `
   <div class="editor-card">
     <div class="section-title" style="margin-top:0;">${d.id? 'Editando relatório' : 'Novo relatório'}</div>
+    <div class="step-h"><span class="svc-num">1</span> Cliente e data</div>
     <div class="field-grid">
       <div class="field"><label>Cliente</label>
         <select data-live-input="report-cliente" ${d.budgetId?'disabled':''}><option value="">— avulso (digitar nome) —</option>${STATE.clients.map(c=>`<option value="${c.id}" ${c.id===d.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
@@ -2114,55 +2265,41 @@ function renderReportEditor(){
       <div class="field"><label>Nome do cliente (se não cadastrado)</label><input data-live-input="report-nome" value="${escapeHtml(d.clienteNome||'')}" ${d.clienteId?'disabled':''} placeholder="Digite o nome"></div>
       <div class="field"><label>Data</label><div class="date-input-wrap"><input id="date-report" type="date" data-live-input="report-data" value="${d.data}">${dateIconBtn('date-report')}</div></div>
     </div>
-    <div class="section-title" style="margin-top:0;">Aparelho(s) atendido(s) <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— qual equipamento e quantos</span></div>
-    <div class="field-grid">
-      <div class="field span2"><label>Aparelho</label><input id="aparelho-desc" placeholder="Ex: Ar condicionado Split 12.000 BTU - Sala"></div>
-      <div class="field"><label>Quantidade</label><input id="aparelho-qtd" type="number" min="1" value="1"></div>
-      <button class="btn" style="margin-top:22px;" data-action="report-add-aparelho">+ Adicionar</button>
-    </div>
-    <div style="margin-top:6px;">${aparelhoRows}</div>
-    ${temItensOrcamento? orcamentoBlock : ''}
-    <div class="section-title">Serviços e itens <span style="font-weight:400;color:var(--ink-soft);font-size:12.5px;">— fora do orçamento, preço aberto</span></div>
-    ${temAp? `<div class="field"><label>Os serviços que você adicionar agora são de qual aparelho?</label>
-      <select data-live-input="report-extra-aparelho">${reportAparelhoOptions(d, reportAparelhoAtual(d))}</select>
-      <div style="color:var(--ink-soft);font-size:12px;margin-top:4px;">No documento, cada serviço aparece embaixo do aparelho escolhido. Dá pra mudar a qualquer momento na lista abaixo.</div>
-    </div>` : ''}
-    <div class="field-grid">
-      <div class="field span2"><label>Adicionar do catálogo (produto, serviço ou material já precificado)</label>
-        <select id="extra-catalogo">
-          <option value="">Selecionar...</option>
-          ${STATE.products.length? `<optgroup label="Produtos">${STATE.products.map(p=>`<option value="produto:${p.id}">${escapeHtml(p.nome)} — ${fmt(p.preco)}</option>`).join('')}</optgroup>` : ''}
-          ${STATE.services.length? `<optgroup label="Serviços">${STATE.services.map(s=>`<option value="servico:${s.id}">${escapeHtml(s.nome)} — ${fmt(s.preco)}</option>`).join('')}</optgroup>` : ''}
-          ${STATE.materials.length? `<optgroup label="Materiais">${STATE.materials.map(m=>`<option value="material:${m.id}">${escapeHtml(m.nome)} — ${fmt(m.preco)}</option>`).join('')}</optgroup>` : ''}
-        </select>
+    <div class="step-h"><span class="svc-num">2</span> Serviços de cada aparelho</div>
+    <div style="color:var(--ink-soft);font-size:13px;">Adicione o aparelho e, dentro do quadro dele, escreva o que foi feito.</div>
+    ${cards}
+    <div class="svc-card">
+      <div class="svc-add-ap">
+        <input id="aparelho-desc" placeholder="Novo aparelho (ex.: Split Samsung 12.000 - Sala)">
+        <input id="aparelho-qtd" type="number" min="1" value="1" title="Quantidade">
+        <button type="button" class="btn" data-action="report-add-aparelho">+ Adicionar aparelho</button>
       </div>
-      <div class="field"><label>Quantidade</label><input id="extra-catalogo-qtd" type="number" min="1" value="1"></div>
-      <button class="btn" style="margin-top:22px;" data-action="report-add-extra-catalogo">+ Adicionar</button>
     </div>
-    <div class="field-grid">
-      <div class="field span2"><label>Descrição (item avulso, fora do catálogo)</label><input id="extra-desc"></div>
-      <div class="field"><label>Valor original (R$) <span style="font-weight:400;color:var(--ink-soft);">— opcional</span></label><input id="extra-orig" type="text" inputmode="decimal" placeholder="Era (ex.: 280,00)"></div>
-      <div class="field"><label>Valor atual (R$)</label><input id="extra-valor" type="text" inputmode="decimal" placeholder="Ficou (ex.: 260,00)"></div>
-      <div class="field"><label>Quantidade</label><input id="extra-qtd" type="number" min="1" value="1"></div>
-      <button class="btn" style="margin-top:22px;" data-action="report-add-extra">+ Adicionar</button>
-    </div>
-    <div style="margin-top:6px;">${extraRows}</div>
-    ${!temItensOrcamento? orcamentoBlock : ''}
-    ${descontoEditorHtml('report', d, totalPrev+totalExtra)}
-    <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total geral</span><span class="num">${fmt(calcDesconto(d, totalPrev+totalExtra).final)}</span></div>
-    <div class="field" style="margin-top:14px;"><label>Condição de pagamento</label>
+    ${geral}
+    <div class="step-h"><span class="svc-num">3</span> Pagamento</div>
+    <details class="svc-det" data-det="desc" ${(temDesc||uiState.det.desc)?'open':''}><summary>💲 Desconto (opcional)</summary>${descontoEditorHtml('report', d, subtotal)}</details>
+    <div class="field"><label>Condição de pagamento</label>
       <div class="chips" style="margin:0;">
         ${['Pix','Dinheiro','Cartão','Boleto'].map(c=>`<button type="button" class="chip ${d.condicoes.includes(c)?'active':''}" data-action="report-toggle-cond" data-v="${c}">${c}</button>`).join('')}
       </div>
     </div>
-    <div class="field"><label>Observações</label><textarea data-live-input="report-obs">${escapeHtml(d.obs)}</textarea></div>
+    <div class="field" style="margin-top:12px;"><label>Observações</label><textarea data-live-input="report-obs">${escapeHtml(d.obs)}</textarea></div>
+    <div class="doc-total" style="border-top:2px solid var(--line);margin-top:14px;"><span>Total geral</span><span class="num">${fmt(calcDesconto(d, subtotal).final)}</span></div>
     <div class="modal-actions">
       <button class="btn ghost" data-action="cancel-report">Cancelar</button>
       <button class="btn primary" data-action="save-report">${d.id? 'Salvar alterações' : 'Salvar relatório'}</button>
     </div>
   </div>`;
 }
-
+// lê o formulário "adicionar serviço" de um quadro (k = id do aparelho ou 'geral')
+function readSvcForm(apId){
+  const k = apId || 'geral';
+  const desc = document.getElementById('svc-desc-'+k);
+  if(!desc || !desc.value.trim()) return null;
+  const valor = parseMoney(document.getElementById('svc-valor-'+k).value);
+  const orig = parseMoney(document.getElementById('svc-orig-'+k).value);
+  return {descricao:desc.value.trim(), valor, qtd:Math.max(1, parseInt(document.getElementById('svc-qtd-'+k).value||1)), aparelhoId:apId||'', valorOriginal: orig>valor? orig : 0};
+}
 /* --- Relatório fotográfico --- */
 // Serviço do fotográfico: texto puro (versão antiga) ou {descricao, valor} (valor opcional)
 function photoServ(x){ return (typeof x==='string')? {descricao:x, valor:null} : {descricao:x.descricao||'', valor:(x.valor===undefined||x.valor===null||x.valor==='')? null : +x.valor}; }
@@ -2605,6 +2742,17 @@ function fitDocSheet(){
   if(avail > 0 && avail < 800) sheet.style.zoom = (avail/800).toFixed(4);
 }
 window.addEventListener('resize', fitDocSheet);
+// guarda quais seções recolhíveis ficaram abertas
+document.addEventListener('toggle', e=>{ const k = e.target.dataset && e.target.dataset.det; if(k) uiState.det[k] = e.target.open; }, true);
+// Enter no formulário de serviço adiciona na hora
+document.addEventListener('keydown', e=>{
+  const el = e.target;
+  if(e.key==='Enter' && el.id && /^svc-(desc|valor|orig|qtd)-/.test(el.id)){ e.preventDefault(); const b = el.closest('.svc-add').querySelector('[data-action="svc-add"]'); if(b) b.click(); }
+});
+registrarSW();
+setTimeout(checkLembretes, 6000);
+setInterval(checkLembretes, 30000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) setTimeout(checkLembretes, 1500); });
 function buildStandaloneDoc(html, title){
   const styleEl = document.getElementById('app-styles');
   const styleContent = styleEl ? styleEl.innerHTML : '';
@@ -3356,6 +3504,20 @@ document.addEventListener('click', async (e)=>{
   if(action==='toggle-past'){ uiState.agendaShowPast = !uiState.agendaShowPast; render(); return; }
   if(action==='agenda-view'){ uiState.agendaView = btn.dataset.v; render(); return; }
   if(action==='agenda-tab'){ uiState.agendaTab = btn.dataset.v; render(); return; }
+  if(action==='pick-lembrete'){
+    btn.classList.toggle('active');
+    const wrap = btn.parentElement;
+    wrap.querySelector('input[name="lembretes"]').value = [...wrap.querySelectorAll('[data-action="pick-lembrete"].active')].map(b=>b.dataset.min).join(',');
+    return;
+  }
+  if(action==='fechar-lembrete'){ btn.closest('.floating-card').remove(); return; }
+  if(action==='ativar-avisos' || action==='testar-aviso'){
+    if(typeof Notification==='undefined') return;
+    if(Notification.permission!=='granted') await Notification.requestPermission();
+    if(Notification.permission==='granted'){ await notificarAparelho('🔔 Central de avisos', 'Pronto! Os avisos dos agendamentos vão aparecer assim.', 'teste'); toast('Avisos ativados neste aparelho.'); }
+    else toast('As notificações não foram permitidas.');
+    render(); return;
+  }
   if(action==='agenda-week-prev'){ const d=new Date(uiState.agendaWeekStart+'T00:00:00'); d.setDate(d.getDate()-7); uiState.agendaWeekStart=todayStr(d); render(); return; }
   if(action==='agenda-week-next'){ const d=new Date(uiState.agendaWeekStart+'T00:00:00'); d.setDate(d.getDate()+7); uiState.agendaWeekStart=todayStr(d); render(); return; }
   if(action==='agenda-week-today'){ uiState.agendaWeekStart = startOfWeekStr(todayStr()); render(); return; }
@@ -3478,22 +3640,10 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='cancel-report'){ reportDraft=null; editingDraft=false; render(); return; }
   if(action==='report-prev-toggle'){ reportDraft.itensPrevistos[+btn.dataset.idx].checked = btn.dataset.v==='true'; render(); return; }
-  if(action==='report-add-extra'){
-    const desc = document.getElementById('extra-desc').value.trim();
-    const val = parseMoney(document.getElementById('extra-valor').value);
-    const qtd = Math.max(1, parseInt(document.getElementById('extra-qtd').value||1));
-    if(!desc){ toast('Preencha a descrição do item.'); return; }
-    reportDraft.itensExtras.push({descricao:desc, valor:val, qtd, aparelhoId:reportAparelhoAtual(reportDraft), valorOriginal:(()=>{ const e=document.getElementById('extra-orig'); const v=e? parseMoney(e.value) : 0; return v>val? v : 0; })()}); render(); return;
-  }
-  if(action==='report-add-extra-catalogo'){
-    const sel = document.getElementById('extra-catalogo');
-    if(!sel.value){ toast('Selecione um item do catálogo.'); return; }
-    const [tipo, id] = sel.value.split(':');
-    const catalogo = tipo==='produto'? STATE.products : tipo==='material'? STATE.materials : STATE.services;
-    const item = catalogo.find(x=>x.id===id);
-    if(!item) return;
-    const qtd = Math.max(1, parseInt(document.getElementById('extra-catalogo-qtd').value||1));
-    reportDraft.itensExtras.push({descricao:item.nome, valor:item.preco, qtd, aparelhoId:reportAparelhoAtual(reportDraft)}); render(); return;
+  if(action==='svc-add'){
+    const it = readSvcForm(btn.dataset.ap);
+    if(!it){ toast('Escreva o que foi feito (ou escolha do catálogo).'); return; }
+    reportDraft.itensExtras.push(it); render(); return;
   }
   if(action==='report-extra-rm'){ reportDraft.itensExtras.splice(+btn.dataset.idx,1); render(); return; }
   if(action==='report-add-aparelho'){
@@ -3515,6 +3665,11 @@ document.addEventListener('click', async (e)=>{
     render(); return;
   }
   if(action==='save-report'){
+    // nada do que foi digitado se perde: o que não foi "adicionado" entra sozinho
+    ['', ...(reportDraft.aparelhos||[]).map(a=>a.id)].forEach(apId=>{ const it = readSvcForm(apId); if(it) reportDraft.itensExtras.push(it); });
+    const apNovo = document.getElementById('aparelho-desc');
+    if(apNovo && apNovo.value.trim()) reportDraft.aparelhos.push({id:uid(), descricao:apNovo.value.trim(), quantidade:Math.max(1, parseInt(document.getElementById('aparelho-qtd').value||1))});
+    delete reportDraft.aparelhoAtual;
     const {id, ...data} = reportDraft;
     if(id) await db.collection('serviceReports').doc(id).update(data);
     else await db.collection('serviceReports').add(data);
@@ -3674,6 +3829,15 @@ document.addEventListener('change', async (e)=>{
   if(el.dataset.action==='budget-item-orig'){ const v=parseMoney(el.value); budgetDraft.itens[+el.dataset.idx].valorOriginal = v>0? v : 0; render(); return; }
   if(el.dataset.action==='report-extra-orig'){ const v=parseMoney(el.value); reportDraft.itensExtras[+el.dataset.idx].valorOriginal = v>0? v : 0; render(); return; }
   if(el.dataset.action==='desc-valor'){ descOf(descDraftOf(el.dataset.kind)).valor = parseMoney(el.value); render(); return; }
+  if(el.dataset.action==='svc-cat'){
+    if(!el.value) return;
+    const [tipo, id] = el.value.split(':');
+    const lista = tipo==='produto'? STATE.products : tipo==='material'? STATE.materials : STATE.services;
+    const item = lista.find(x=>x.id===id); if(!item) return;
+    document.getElementById('svc-desc-'+el.dataset.k).value = item.nome;
+    document.getElementById('svc-valor-'+el.dataset.k).value = (+item.preco||0).toFixed(2).replace('.',',');
+    return;
+  }
   if(el.dataset.action==='desc-abate-ap'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].aparelhoId = el.value; render(); return; }
   if(el.dataset.action==='desc-abate-valor'){ descOf(descDraftOf(el.dataset.kind)).abates[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
   if(el.dataset.action==='budget-item-valor'){ budgetDraft.itens[+el.dataset.idx].valor = parseMoney(el.value); render(); return; }
