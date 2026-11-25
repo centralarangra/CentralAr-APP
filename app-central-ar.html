@@ -339,6 +339,17 @@ tr:hover td{background:var(--paper);}
   .svc-add-ap .btn{grid-column:1/-1;justify-content:center;}
 }
 
+/* listas divididas por mês e semana */
+.mes-box{margin:0 0 14px;}
+.mes-box>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#0F2A52;color:#fff;border-radius:12px;padding:12px 16px;}
+.mes-box>summary::-webkit-details-marker{display:none;}
+.mes-box>summary::before{content:'▸';font-size:13px;}
+.mes-box[open]>summary::before{content:'▾';}
+.mes-nome{flex:1;font-family:'Poppins',sans-serif;font-weight:700;font-size:15px;}
+.mes-res{font-size:13px;}
+.semana-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin:14px 4px 6px;}
+@media(min-width:881px){ .mes-box table{table-layout:fixed;} .mes-box td{overflow-wrap:anywhere;} }
+
 /* print documents */
 #print-root{display:none;}
 #print-root.show{display:block;position:fixed;inset:0;background:#EAEDF1;z-index:300;overflow-y:auto;padding:18px 0 60px;}
@@ -496,7 +507,7 @@ function closeDrawer(){ document.getElementById('sidebar').classList.remove('ope
 /* ============================================================
    ESTADO
 ============================================================ */
-const APP_VERSION = 'v1.39.0';
+const APP_VERSION = 'v1.40.0';
 const STATE = {clients:[],services:[],products:[],materials:[],employees:[],categories:[],transactions:[],sales:[],appointments:[],budgets:[],serviceReports:[],checklists:[],photoReports:[],fixedExpenses:[],laudos:[],planos:[]};
 const uiState = {tab:'painel', reportSub:'realizado', cadastroSub:'clients', finMonth:null, finTipo:'todos', crudSearch:{}, agendaShowPast:true, det:{}, agendaTab:'agendados', agendaView:'semana', agendaWeekStart:null};
 let db = null, usingLocalFallback = false, usingRealDb = false, editingDraft = false;
@@ -1743,8 +1754,8 @@ function renderAgenda(){
 }
 
 function renderAgendaDone(){
-  const list = STATE.appointments.filter(a=>a.status==='Concluído').sort((a,b)=>((b.data||'')+(b.hora||'')).localeCompare((a.data||'')+(a.hora||'')));
-  const rows = list.map(a=>`<tr>
+  const list = STATE.appointments.filter(a=>a.status==='Concluído');
+  const linha = a=>`<tr>
     <td data-label="Data/Hora"><div><b>${formatDateBR(a.data)}</b><br><span style="color:var(--ink-soft);font-size:12px;">${a.hora||'—'}${a.horaFim?' – '+a.horaFim:''}</span></div></td>
     <td data-label="Cliente"><div><span class="color-dot" style="background:${a.cor||APPT_COLORS[0]};"></span>${escapeHtml(stripApptServ(a.clienteNome,a.servicoDescricao)||clientName(a.clienteId)||'Cliente avulso')}${a.origem==='google'?` <span title="Importado da Google Agenda" style="opacity:.55;">📅</span>`:''}</div></td>
     <td data-label="Serviço">${escapeHtml(a.servicoDescricao||'—')}</td>
@@ -1757,12 +1768,9 @@ function renderAgendaDone(){
       <button class="icon-btn" data-action="edit-appt" data-id="${a.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="delete-appt" data-id="${a.id}">${trashIcon}</button>
     </div></td>
-  </tr>`).join('');
-  return `
-  <div class="table-wrap">
-    ${list.length? `<table><thead><tr><th>Data / Hora</th><th>Cliente</th><th>Serviço</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-    : `<div class="empty-state"><div class="display">Nenhum serviço executado ainda</div>Quando terminar um serviço, mude o status dele para "Concluído" e ele aparece aqui.</div>`}
-  </div>`;
+  </tr>`;
+  if(!list.length) return `<div class="table-wrap"><div class="empty-state"><div class="display">Nenhum serviço executado ainda</div>Quando terminar um serviço, mude o status dele para "Concluído" e ele aparece aqui.</div></div>`;
+  return listaPorMesSemana({lista:list, linha, chave:'exec', cabecalho:'<th style="width:140px;">Data / Hora</th><th>Cliente</th><th>Serviço</th><th style="width:170px;">Status</th><th style="width:110px;"></th>'});
 }
 // avisa pra onde o agendamento foi, pra não parecer que sumiu
 function toastMudancaAba(antes, depois){
@@ -2143,24 +2151,57 @@ function newReportDraft(budgetId){
     itensExtras: [], aparelhos: budget? JSON.parse(JSON.stringify(budget.aparelhos||[])).map(a=>({...a, id:a.id||uid()})) : [], desc: budget&&budget.desc? JSON.parse(JSON.stringify(budget.desc)) : {pct:0,valor:0,abates:[]}, condicoes:['Pix'], obs:''
   };
 }
+const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function tituloMes(m){ return m? `${MESES[+m.slice(5,7)-1]} de ${m.slice(0,4)}` : 'Sem data'; }
+// semana de domingo a sábado, cortada nos limites do mês (ex.: "Semana de 01/11 a 07/11")
+function tituloSemana(ini, m){
+  if(!ini) return 'Sem data';
+  const fim = new Date(ini+'T00:00:00'); fim.setDate(fim.getDate()+6);
+  const primeiro = m+'-01', ultimo = todayStr(new Date(+m.slice(0,4), +m.slice(5,7), 0));
+  const d1 = ini<primeiro? primeiro : ini, d2 = todayStr(fim)>ultimo? ultimo : todayStr(fim);
+  const curto = s => s.slice(8,10)+'/'+s.slice(5,7);
+  const hoje = todayStr();
+  const estaSemana = ini===startOfWeekStr(hoje) && m===hoje.slice(0,7);
+  return (d1===d2? `Dia ${curto(d1)}` : `Semana de ${curto(d1)} a ${curto(d2)}`) + (estaSemana? ' (esta semana)' : '');
+}
+// Lista dividida por mês e, dentro do mês, por semana. `valor` (opcional) soma o total em R$ de cada mês/semana.
+function listaPorMesSemana({lista, linha, cabecalho, chave, valor}){
+  const ordenada = lista.slice().sort((a,b)=>((b.data||'')+(b.hora||'')).localeCompare((a.data||'')+(a.hora||'')));
+  const meses = new Map();
+  ordenada.forEach(x=>{ const m=(x.data||'').slice(0,7); if(!meses.has(m)) meses.set(m,[]); meses.get(m).push(x); });
+  const resumo = l => `${l.length} serviço${l.length>1?'s':''}${valor? ` · <b class="num">${fmt(l.reduce((s,x)=>s+valor(x),0))}</b>` : ''}`;
+  const atual = todayStr().slice(0,7);
+  return [...meses].map(([m,itens],i)=>{
+    const semanas = new Map();
+    itens.forEach(x=>{ const ini = x.data? startOfWeekStr(x.data) : ''; if(!semanas.has(ini)) semanas.set(ini,[]); semanas.get(ini).push(x); });
+    const key = `${chave}-${m}`;
+    const aberto = uiState.det[key]===undefined? (m===atual || (i===0 && !meses.has(atual))) : uiState.det[key];
+    return `<details class="mes-box" data-det="${key}" ${aberto?'open':''}>
+      <summary><span class="mes-nome">${tituloMes(m)}</span><span class="mes-res">${resumo(itens)}</span></summary>
+      ${[...semanas].map(([ini,l])=>`<div class="semana-h"><span>${tituloSemana(ini,m)}</span><span>${resumo(l)}</span></div>
+      <div class="table-wrap"><table><thead><tr>${cabecalho}</tr></thead><tbody>${l.map(linha).join('')}</tbody></table></div>`).join('')}
+    </details>`;
+  }).join('');
+}
+function totalRelatorio(r){
+  return calcDesconto(r, (r.itensPrevistos||[]).filter(i=>i.checked).reduce((s,i)=>s+i.valor,0)+(r.itensExtras||[]).reduce((s,i)=>s+i.valor*(i.qtd||1),0)).final;
+}
 function renderReportList(){
-  const list = STATE.serviceReports.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
-  const rows = list.map(r=>`<tr>
+  const linha = r=>`<tr>
     <td data-label="Data">${formatDateBR(r.data)}</td>
     <td data-label="Cliente">${escapeHtml(clientName(r.clienteId)||r.clienteNome||'—')}</td>
-    <td data-label="Total" class="num" style="font-weight:700;">${fmt(calcDesconto(r, (r.itensPrevistos||[]).filter(i=>i.checked).reduce((s,i)=>s+i.valor,0)+(r.itensExtras||[]).reduce((s,i)=>s+i.valor*(i.qtd||1),0)).final)}</td>
+    <td data-label="Total" class="num" style="font-weight:700;">${fmt(totalRelatorio(r))}</td>
     <td><div class="row-actions">
       <button class="icon-btn" data-action="edit-report" data-id="${r.id}" title="Editar">${editIcon}</button>
       <button class="icon-btn" data-action="print-report" data-id="${r.id}">${printIcon}</button>
       <button class="icon-btn" data-action="delete-report" data-id="${r.id}">${trashIcon}</button>
     </div></td>
-  </tr>`).join('');
+  </tr>`;
   return `
   <div class="head-actions" style="margin-bottom:16px;"><button class="btn primary" data-action="new-report">+ Novo relatório</button></div>
-  <div class="table-wrap">
-    ${list.length? `<table><thead><tr><th>Data</th><th>Cliente</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-    : `<div class="empty-state"><div class="display">Nenhum relatório ainda</div>Gere a partir de um orçamento aprovado ou crie um avulso.</div>`}
-  </div>`;
+  ${STATE.serviceReports.length
+    ? listaPorMesSemana({lista:STATE.serviceReports, linha, chave:'rel', valor:totalRelatorio, cabecalho:'<th style="width:140px;">Data</th><th>Cliente</th><th style="width:160px;">Total</th><th style="width:160px;"></th>'})
+    : `<div class="table-wrap"><div class="empty-state"><div class="display">Nenhum relatório ainda</div>Gere a partir de um orçamento aprovado ou crie um avulso.</div></div>`}`;
 }
 function reportStartModalHtml(){
   const options = STATE.budgets.slice().sort((a,b)=>(b.numero||0)-(a.numero||0));
